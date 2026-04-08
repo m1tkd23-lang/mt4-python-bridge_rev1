@@ -1,0 +1,504 @@
+# src/backtest_gui_app/views/main_window.py
+from __future__ import annotations
+
+import csv
+from pathlib import Path
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QMainWindow,
+    QMessageBox,
+    QSplitter,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from backtest.csv_loader import CsvLoadError
+from backtest.service import BacktestRunArtifacts, run_backtest
+from backtest.simulator import BacktestSimulationError
+from backtest_gui_app.constants import DEFAULT_DATA_DIR, DEFAULT_STRATEGIES_DIR, REPO_ROOT
+from backtest_gui_app.helpers import list_csv_paths, list_strategy_names
+from backtest_gui_app.presenters.result_presenter import BacktestResultPresenter
+from backtest_gui_app.services.run_config_builder import build_run_config
+from backtest_gui_app.views.chart_overview_tab import ChartOverviewTab
+from backtest_gui_app.views.input_panel import InputPanel
+from backtest_gui_app.views.result_tabs import ResultTabs
+from backtest_gui_app.views.summary_panel import SummaryPanel
+
+
+class BacktestMainWindow(QMainWindow):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setWindowTitle("MT4 Backtest GUI")
+        self.resize(1520, 920)
+
+        self._latest_artifacts: BacktestRunArtifacts | None = None
+        self._syncing_trade_selection = False
+
+        self.input_panel = InputPanel()
+        self.summary_panel = SummaryPanel()
+        self.result_tabs_panel = ResultTabs()
+        self.chart_overview_tab = ChartOverviewTab()
+
+        self._presenter = BacktestResultPresenter(
+            summary_panel=self.summary_panel,
+            result_tabs=self.result_tabs_panel,
+            input_panel=self.input_panel,
+            chart_overview_tab=self.chart_overview_tab,
+        )
+
+        self._build_layout()
+        self._connect_signals()
+
+        self._refresh_strategy_list()
+        self._refresh_csv_list()
+        self._apply_default_values()
+        self._clear_result_views()
+
+    def _build_layout(self) -> None:
+        central = QWidget()
+        self.setCentralWidget(central)
+
+        root_layout = QVBoxLayout(central)
+        root_layout.setContentsMargins(8, 8, 8, 8)
+        root_layout.setSpacing(8)
+
+        self.page_tabs = QTabWidget()
+        self.page_tabs.addTab(self._build_standard_page(), "Standard")
+        self.page_tabs.addTab(self.chart_overview_tab, "Chart view")
+
+        root_layout.addWidget(self.page_tabs)
+
+    def _build_standard_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        upper_container = self._build_upper_area()
+        lower_container = self._build_lower_area()
+
+        main_splitter = QSplitter(Qt.Vertical)
+        main_splitter.addWidget(upper_container)
+        main_splitter.addWidget(lower_container)
+        main_splitter.setStretchFactor(0, 0)
+        main_splitter.setStretchFactor(1, 1)
+        main_splitter.setSizes([300, 620])
+
+        layout.addWidget(main_splitter)
+        return page
+
+    def _build_upper_area(self) -> QWidget:
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        top_splitter = QSplitter(Qt.Horizontal)
+        top_splitter.addWidget(self.input_panel)
+        top_splitter.addWidget(self.summary_panel)
+        top_splitter.setStretchFactor(0, 3)
+        top_splitter.setStretchFactor(1, 2)
+        top_splitter.setSizes([950, 520])
+
+        layout.addWidget(top_splitter)
+        return container
+
+    def _build_lower_area(self) -> QWidget:
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        layout.addWidget(self.result_tabs_panel)
+        return container
+
+    def _connect_signals(self) -> None:
+        self.input_panel.refresh_strategy_button.clicked.connect(
+            self._refresh_strategy_list
+        )
+        self.input_panel.refresh_csv_button.clicked.connect(self._refresh_csv_list)
+        self.input_panel.browse_csv_button.clicked.connect(self._browse_csv_file)
+        self.input_panel.run_button.clicked.connect(self._run_backtest)
+        self.input_panel.clear_button.clicked.connect(self._clear_result_views)
+        self.input_panel.export_trades_csv_button.clicked.connect(
+            self._export_trades_csv
+        )
+
+        self.result_tabs_panel.trades_table.itemSelectionChanged.connect(
+            self._on_primary_trade_selection_changed
+        )
+        self.chart_overview_tab.detail_tabs.trades_table.itemSelectionChanged.connect(
+            self._on_chart_trade_selection_changed
+        )
+
+    def _apply_default_values(self) -> None:
+        self.input_panel.symbol_edit.setText("BACKTEST")
+        self.input_panel.timeframe_edit.setText("M1")
+        self.input_panel.pip_size_edit.setText("0.01")
+        self.input_panel.sl_pips_edit.setText("10")
+        self.input_panel.tp_pips_edit.setText("10")
+        self.input_panel.initial_balance_edit.setText("1000000")
+        self.input_panel.risk_percent_edit.setText("1.0")
+
+    def _refresh_strategy_list(self) -> None:
+        current = self.input_panel.strategy_combo.currentText().strip()
+        names = list_strategy_names(DEFAULT_STRATEGIES_DIR)
+
+        self.input_panel.strategy_combo.clear()
+        self.input_panel.strategy_combo.addItems(names)
+
+        if current:
+            index = self.input_panel.strategy_combo.findText(current)
+            if index >= 0:
+                self.input_panel.strategy_combo.setCurrentIndex(index)
+
+        if self.input_panel.strategy_combo.count() == 0:
+            self.input_panel.notes_text.setPlainText(
+                f"Strategy directory not found or empty:\n{DEFAULT_STRATEGIES_DIR}"
+            )
+
+    def _refresh_csv_list(self) -> None:
+        current_data = self.input_panel.csv_combo.currentData()
+        csv_paths = list_csv_paths(DEFAULT_DATA_DIR)
+
+        self.input_panel.csv_combo.clear()
+        for path in csv_paths:
+            display_text = str(path.relative_to(REPO_ROOT))
+            self.input_panel.csv_combo.addItem(display_text, str(path))
+
+        if current_data:
+            index = self._find_csv_combo_index_by_path(str(current_data))
+            if index >= 0:
+                self.input_panel.csv_combo.setCurrentIndex(index)
+
+        if self.input_panel.csv_combo.count() == 0:
+            self.input_panel.notes_text.setPlainText(
+                f"CSV files not found under:\n{DEFAULT_DATA_DIR}"
+            )
+
+    def _browse_csv_file(self) -> None:
+        start_dir = str(DEFAULT_DATA_DIR if DEFAULT_DATA_DIR.exists() else REPO_ROOT)
+        selected, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select CSV file",
+            start_dir,
+            "CSV Files (*.csv);;All Files (*)",
+        )
+        if not selected:
+            return
+
+        index = self._find_csv_combo_index_by_path(selected)
+        if index >= 0:
+            self.input_panel.csv_combo.setCurrentIndex(index)
+            return
+
+        display_text = self._display_path_for_combo(Path(selected))
+        self.input_panel.csv_combo.addItem(display_text, selected)
+        self.input_panel.csv_combo.setCurrentIndex(
+            self.input_panel.csv_combo.count() - 1
+        )
+
+    def _find_csv_combo_index_by_path(self, path_text: str) -> int:
+        for index in range(self.input_panel.csv_combo.count()):
+            if self.input_panel.csv_combo.itemData(index) == path_text:
+                return index
+        return -1
+
+    def _display_path_for_combo(self, path: Path) -> str:
+        try:
+            return str(path.resolve().relative_to(REPO_ROOT.resolve()))
+        except ValueError:
+            return str(path)
+
+    def _clear_result_views(self) -> None:
+        self._latest_artifacts = None
+        self._clear_trade_table_selection(self.result_tabs_panel.trades_table)
+        self._clear_trade_table_selection(
+            self.chart_overview_tab.detail_tabs.trades_table
+        )
+        self.chart_overview_tab.linked_chart.clear_highlight()
+        self._presenter.clear_result_views()
+
+    def _run_backtest(self) -> None:
+        try:
+            config = build_run_config(self.input_panel)
+            artifacts = run_backtest(config)
+        except (ValueError, CsvLoadError, BacktestSimulationError) as exc:
+            self._show_error(str(exc))
+            return
+        except Exception as exc:
+            self._show_error(f"Unexpected error: {exc}")
+            return
+
+        self._latest_artifacts = artifacts
+        self._presenter.apply_artifacts_to_ui(artifacts)
+        self._clear_trade_table_selection(self.result_tabs_panel.trades_table)
+        self._clear_trade_table_selection(
+            self.chart_overview_tab.detail_tabs.trades_table
+        )
+        self.chart_overview_tab.linked_chart.clear_highlight()
+
+    def _export_trades_csv(self) -> None:
+        if self._latest_artifacts is None or not self._latest_artifacts.trade_rows:
+            self._show_error("No trades to export.")
+            return
+
+        strategy_name = self.input_panel.strategy_combo.currentText().strip() or "trades"
+        csv_data = self.input_panel.csv_combo.currentData()
+        csv_path = Path(csv_data) if csv_data else None
+        stem = csv_path.stem if csv_path is not None else "output"
+        default_filename = f"{strategy_name}__{stem}__trades.csv"
+
+        start_dir = str(DEFAULT_DATA_DIR if DEFAULT_DATA_DIR.exists() else REPO_ROOT)
+        selected_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Trades CSV",
+            str(Path(start_dir) / default_filename),
+            "CSV Files (*.csv)",
+        )
+        if not selected_path:
+            return
+
+        try:
+            self._write_trade_rows_to_csv(
+                trade_rows=self._latest_artifacts.trade_rows,
+                path=Path(selected_path),
+            )
+        except Exception as exc:
+            self._show_error(f"Failed to export CSV: {exc}")
+            return
+
+        self.input_panel.notes_text.append(f"Trades CSV exported:\n{selected_path}")
+
+    def _write_trade_rows_to_csv(self, *, trade_rows, path: Path) -> None:
+        headers = [
+            "trade_no",
+            "lane",
+            "entry_subtype",
+            "entry_time",
+            "exit_time",
+            "position_type",
+            "entry_price",
+            "exit_price",
+            "pips",
+            "cumulative_pips",
+            "trade_profit_amount",
+            "balance_after_trade",
+            "result_label",
+            "consecutive_wins",
+            "consecutive_losses",
+            "exit_reason",
+            "entry_market_state",
+            "exit_market_state",
+            "entry_detected_market_state",
+            "entry_candidate_market_state",
+            "entry_state_transition_event",
+            "entry_state_age",
+            "entry_candidate_age",
+            "entry_detector_reason",
+            "entry_range_score",
+            "entry_transition_up_score",
+            "entry_transition_down_score",
+            "entry_trend_up_score",
+            "entry_trend_down_score",
+            "exit_detected_market_state",
+            "exit_candidate_market_state",
+            "exit_state_transition_event",
+            "exit_state_age",
+            "exit_candidate_age",
+            "exit_detector_reason",
+            "exit_range_score",
+            "exit_transition_up_score",
+            "exit_transition_down_score",
+            "exit_trend_up_score",
+            "exit_trend_down_score",
+            "entry_signal_reason",
+            "exit_signal_reason",
+            "entry_middle_band",
+            "entry_upper_band",
+            "entry_lower_band",
+            "entry_normalized_band_width",
+            "entry_range_slope",
+            "entry_trend_slope",
+            "entry_trend_current_ma",
+            "entry_distance_from_middle",
+            "exit_middle_band",
+            "exit_upper_band",
+            "exit_lower_band",
+            "exit_normalized_band_width",
+            "exit_range_slope",
+            "exit_trend_slope",
+            "exit_trend_current_ma",
+            "exit_distance_from_middle",
+            "entry_risk_score",
+            "entry_upper_band_walk",
+            "entry_lower_band_walk",
+            "entry_upper_band_walk_hits",
+            "entry_lower_band_walk_hits",
+            "entry_dangerous_for_buy",
+            "entry_dangerous_for_sell",
+            "entry_strong_up_slope",
+            "entry_strong_down_slope",
+            "entry_latest_slope",
+            "entry_prev_slope",
+            "entry_latest_band_width",
+            "entry_prev_band_width",
+            "entry_latest_distance",
+            "entry_prev_distance",
+        ]
+
+        with path.open("w", newline="", encoding="utf-8-sig") as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(headers)
+
+            for row in trade_rows:
+                writer.writerow(
+                    [
+                        row.trade_no,
+                        row.lane,
+                        self._csv_text(row.entry_subtype),
+                        self._csv_text(row.entry_time),
+                        self._csv_text(row.exit_time),
+                        row.position_type,
+                        row.entry_price,
+                        row.exit_price,
+                        row.pips,
+                        row.cumulative_pips,
+                        row.trade_profit_amount,
+                        row.balance_after_trade,
+                        row.result_label,
+                        row.consecutive_wins,
+                        row.consecutive_losses,
+                        row.exit_reason,
+                        self._csv_text(row.entry_market_state),
+                        self._csv_text(row.exit_market_state),
+                        self._csv_text(row.entry_detected_market_state),
+                        self._csv_text(row.entry_candidate_market_state),
+                        self._csv_text(row.entry_state_transition_event),
+                        self._csv_text(row.entry_state_age),
+                        self._csv_text(row.entry_candidate_age),
+                        self._csv_text(row.entry_detector_reason),
+                        self._csv_text(row.entry_range_score),
+                        self._csv_text(row.entry_transition_up_score),
+                        self._csv_text(row.entry_transition_down_score),
+                        self._csv_text(row.entry_trend_up_score),
+                        self._csv_text(row.entry_trend_down_score),
+                        self._csv_text(row.exit_detected_market_state),
+                        self._csv_text(row.exit_candidate_market_state),
+                        self._csv_text(row.exit_state_transition_event),
+                        self._csv_text(row.exit_state_age),
+                        self._csv_text(row.exit_candidate_age),
+                        self._csv_text(row.exit_detector_reason),
+                        self._csv_text(row.exit_range_score),
+                        self._csv_text(row.exit_transition_up_score),
+                        self._csv_text(row.exit_transition_down_score),
+                        self._csv_text(row.exit_trend_up_score),
+                        self._csv_text(row.exit_trend_down_score),
+                        self._csv_text(row.entry_signal_reason),
+                        self._csv_text(row.exit_signal_reason),
+                        self._csv_text(row.entry_middle_band),
+                        self._csv_text(row.entry_upper_band),
+                        self._csv_text(row.entry_lower_band),
+                        self._csv_text(row.entry_normalized_band_width),
+                        self._csv_text(row.entry_range_slope),
+                        self._csv_text(row.entry_trend_slope),
+                        self._csv_text(row.entry_trend_current_ma),
+                        self._csv_text(row.entry_distance_from_middle),
+                        self._csv_text(row.exit_middle_band),
+                        self._csv_text(row.exit_upper_band),
+                        self._csv_text(row.exit_lower_band),
+                        self._csv_text(row.exit_normalized_band_width),
+                        self._csv_text(row.exit_range_slope),
+                        self._csv_text(row.exit_trend_slope),
+                        self._csv_text(row.exit_trend_current_ma),
+                        self._csv_text(row.exit_distance_from_middle),
+                        self._csv_text(row.entry_risk_score),
+                        self._csv_text(row.entry_upper_band_walk),
+                        self._csv_text(row.entry_lower_band_walk),
+                        self._csv_text(row.entry_upper_band_walk_hits),
+                        self._csv_text(row.entry_lower_band_walk_hits),
+                        self._csv_text(row.entry_dangerous_for_buy),
+                        self._csv_text(row.entry_dangerous_for_sell),
+                        self._csv_text(row.entry_strong_up_slope),
+                        self._csv_text(row.entry_strong_down_slope),
+                        self._csv_text(row.entry_latest_slope),
+                        self._csv_text(row.entry_prev_slope),
+                        self._csv_text(row.entry_latest_band_width),
+                        self._csv_text(row.entry_prev_band_width),
+                        self._csv_text(row.entry_latest_distance),
+                        self._csv_text(row.entry_prev_distance),
+                    ]
+                )
+
+    def _csv_text(self, value) -> str:
+        if value is None:
+            return ""
+        return str(value)
+
+    def _clear_trade_table_selection(self, table) -> None:
+        table.blockSignals(True)
+        try:
+            table.clearSelection()
+            table.setCurrentCell(-1, -1)
+        finally:
+            table.blockSignals(False)
+
+    def _on_primary_trade_selection_changed(self) -> None:
+        self._handle_trade_selection_change(
+            selected_row=self.result_tabs_panel.trades_table.currentRow(),
+            source="primary",
+        )
+
+    def _on_chart_trade_selection_changed(self) -> None:
+        self._handle_trade_selection_change(
+            selected_row=self.chart_overview_tab.detail_tabs.trades_table.currentRow(),
+            source="chart",
+        )
+
+    def _handle_trade_selection_change(
+        self,
+        *,
+        selected_row: int,
+        source: str,
+    ) -> None:
+        if self._syncing_trade_selection:
+            return
+
+        if self._latest_artifacts is None:
+            return
+
+        trade_rows = self._latest_artifacts.trade_rows
+        if selected_row < 0 or selected_row >= len(trade_rows):
+            self.chart_overview_tab.linked_chart.clear_highlight()
+            return
+
+        self._syncing_trade_selection = True
+        try:
+            if source == "primary":
+                self._select_row_without_signal(
+                    self.chart_overview_tab.detail_tabs.trades_table,
+                    selected_row,
+                )
+            else:
+                self._select_row_without_signal(
+                    self.result_tabs_panel.trades_table,
+                    selected_row,
+                )
+        finally:
+            self._syncing_trade_selection = False
+
+        self.chart_overview_tab.linked_chart.highlight_trade(trade_rows[selected_row])
+
+    def _select_row_without_signal(self, table, row_index: int) -> None:
+        table.blockSignals(True)
+        try:
+            table.selectRow(row_index)
+            table.setCurrentCell(row_index, 0)
+        finally:
+            table.blockSignals(False)
+
+    def _show_error(self, message: str) -> None:
+        self.input_panel.notes_text.setPlainText(f"Error:\n{message}")
+        QMessageBox.critical(self, "Backtest error", message)

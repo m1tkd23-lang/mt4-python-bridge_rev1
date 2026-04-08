@@ -1,0 +1,25 @@
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -e .
+
+
+python src/app_cli.py
+
+python src\app_watch.py
+
+
+テスト用GUI
+
+pip install -r requirements.txt
+
+python src\backtest_gui.py
+
+
+exe
+
+pyinstaller --noconfirm --onedir --windowed --name mt4-watch-gui --paths src --collect-submodules mt4_bridge.strategies src\app_watch_gui.py
+
+
+
+#csvテスト
+python C:\WS\repos\mt4-python-bridge\TEST\analyze_trades.py

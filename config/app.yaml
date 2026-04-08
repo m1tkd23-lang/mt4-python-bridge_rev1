@@ -1,0 +1,22 @@
+# config\app.yaml
+bridge:
+  root: "C:/Users/toku/AppData/Roaming/MetaQuotes/Terminal/F1DD1D6E7C4A311D1B1CA0D34E33291D/MQL4/Files/mt4-python-bridge"
+  market_snapshot_filename: "market_snapshot.json"
+  runtime_status_filename: "runtime_status.json"
+  position_snapshot_filename: "position_snapshot.json"
+
+snapshot:
+  market_stale_seconds: 10
+  runtime_stale_seconds: 10
+
+signal:
+  enabled: true
+  strategy_name: "bollinger_combo_AB"
+
+risk:
+  sl_pips: 10
+  tp_pips: 30
+
+runtime:
+  state_file: "runtime/state.json"
+  skip_if_pending_command: true

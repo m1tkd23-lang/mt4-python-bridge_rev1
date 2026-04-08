@@ -1,0 +1,3 @@
+﻿period,source_file,lane,total,wins,losses,avg_pips,total_pips,win_rate
+2026-01,bollinger_range_v4_4_guarded__USDJPY-cd5_20250521_2026-01__trades.csv,legacy,101,45,56,-1.5613861386135501,-157.69999999996855,44.554455445544555
+2026-03,bollinger_range_v4_4_guarded__USDJPY-cd5_20250521_2026-03__trades.csv,legacy,115,80,35,3.644347826087082,419.10000000001446,69.56521739130434

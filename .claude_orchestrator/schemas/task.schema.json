@@ -1,0 +1,142 @@
+
+{
+  "_meta": {
+    "relative_path": "src/claude_orchestrator/template_assets/project_bundle/.claude_orchestrator/schemas/task.schema.json"
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Task",
+  "type": "object",
+  "required": [
+    "task_id",
+    "title",
+    "description",
+    "target_repo",
+    "created_at",
+    "role_skill_plan",
+    "skill_selection_reason",
+    "initial_execution_notes"
+  ],
+  "properties": {
+    "_meta": {
+      "type": "object",
+      "properties": {
+        "relative_path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "relative_path"
+      ],
+      "additionalProperties": true
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "target_repo": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "context_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "task_type": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "feature",
+        "bugfix",
+        "refactor",
+        "docs",
+        "research",
+        "chore",
+        null
+      ]
+    },
+    "risk_level": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        null
+      ]
+    },
+    "role_skill_plan": {
+      "type": "object",
+      "required": [
+        "task_router",
+        "implementer",
+        "reviewer",
+        "director"
+      ],
+      "properties": {
+        "task_router": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "implementer": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reviewer": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "director": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "skill_selection_source": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "skill_selection_reason": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "initial_execution_notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": true
+}
