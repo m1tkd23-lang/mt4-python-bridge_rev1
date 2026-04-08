@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from backtest.aggregate_stats import AggregateStats, aggregate_monthly_stats
 from backtest.csv_loader import HistoricalBarDataset, load_historical_bars_csv
 from backtest.evaluator import (
     EvaluationResult,
@@ -107,4 +108,60 @@ def run_backtest(
         trade_rows=trade_rows,
         equity_points=equity_points,
         decision_log_rows=decision_log_rows,
+    )
+
+
+@dataclass(frozen=True)
+class AllMonthsResult:
+    monthly_artifacts: list[tuple[str, BacktestRunArtifacts]]
+    aggregate: AggregateStats
+
+
+def run_all_months(
+    csv_dir: Path,
+    strategy_name: str,
+    symbol: str = "BACKTEST",
+    timeframe: str = "M1",
+    pip_size: float = 0.01,
+    sl_pips: float = 10.0,
+    tp_pips: float = 10.0,
+    intrabar_fill_policy: IntrabarFillPolicy = IntrabarFillPolicy.CONSERVATIVE,
+    close_open_position_at_end: bool = True,
+    initial_balance: float = 1_000_000.0,
+    money_per_pip: float = 100.0,
+    thresholds: EvaluationThresholds | None = None,
+) -> AllMonthsResult:
+    csv_files = sorted(csv_dir.glob("*.csv"))
+    if not csv_files:
+        raise ValueError(f"No CSV files found in directory: {csv_dir}")
+
+    monthly_artifacts: list[tuple[str, BacktestRunArtifacts]] = []
+
+    for csv_path in csv_files:
+        label = csv_path.stem
+        config = BacktestRunConfig(
+            csv_path=csv_path,
+            strategy_name=strategy_name,
+            symbol=symbol,
+            timeframe=timeframe,
+            pip_size=pip_size,
+            sl_pips=sl_pips,
+            tp_pips=tp_pips,
+            intrabar_fill_policy=intrabar_fill_policy,
+            close_open_position_at_end=close_open_position_at_end,
+            initial_balance=initial_balance,
+            money_per_pip=money_per_pip,
+        )
+        artifacts = run_backtest(config, thresholds=thresholds)
+        monthly_artifacts.append((label, artifacts))
+
+    monthly_stats = [
+        (label, artifacts.backtest_result.stats)
+        for label, artifacts in monthly_artifacts
+    ]
+    aggregate = aggregate_monthly_stats(monthly_stats)
+
+    return AllMonthsResult(
+        monthly_artifacts=monthly_artifacts,
+        aggregate=aggregate,
     )

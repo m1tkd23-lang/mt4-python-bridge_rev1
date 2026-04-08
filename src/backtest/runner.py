@@ -10,7 +10,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backtest.csv_loader import CsvLoadError
-from backtest.service import BacktestRunConfig, run_backtest
+from backtest.service import BacktestRunConfig, run_backtest, run_all_months
 from backtest.simulator import BacktestSimulationError, IntrabarFillPolicy
 
 
@@ -18,7 +18,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run a simple bar-based backtest for mt4-python-bridge strategies."
     )
-    parser.add_argument("--csv", required=True, help="Path to historical bar CSV file.")
+    csv_group = parser.add_mutually_exclusive_group(required=True)
+    csv_group.add_argument("--csv", help="Path to historical bar CSV file (single month).")
+    csv_group.add_argument("--csv-dir", help="Path to directory containing monthly CSV files (all-month batch).")
     parser.add_argument(
         "--strategy",
         required=True,
@@ -126,6 +128,33 @@ def print_summary(artifacts) -> None:
     print(f"  Final open position type: {summary.final_open_position_type}")
 
 
+def print_aggregate_summary(result) -> None:
+    agg = result.aggregate
+    print("=" * 60)
+    print("All-month aggregate result:")
+    print(f"  Months: {agg.month_count}")
+    print(f"  Total trades: {agg.total_trades}")
+    print(f"  Total wins: {agg.total_wins}")
+    print(f"  Total losses: {agg.total_losses}")
+    print(f"  Overall win rate: {agg.overall_win_rate:.2f}%")
+    print(f"  Total pips: {agg.total_pips:.2f}")
+    print(f"  Average pips/month: {agg.average_pips_per_month:.2f}")
+    print(f"  Profit factor: {_format_profit_factor(agg.overall_profit_factor)}")
+    print(f"  Max drawdown pips (worst month): {agg.max_drawdown_pips:.2f}")
+    if agg.monthly_pips_stddev is not None:
+        print(f"  Monthly pips stddev: {agg.monthly_pips_stddev:.2f}")
+    else:
+        print("  Monthly pips stddev: N/A")
+    print(f"  Deficit months: {agg.deficit_month_count}")
+    print(f"  Max consecutive deficit months: {agg.max_consecutive_deficit_months}")
+    print()
+    print("Monthly breakdown:")
+    for entry in agg.monthly_entries:
+        marker = " [DEFICIT]" if entry.total_pips < 0 else ""
+        print(f"  {entry.label}: {entry.total_pips:.2f} pips{marker}")
+    print("=" * 60)
+
+
 def print_recent_trades(artifacts, show_trades: int) -> None:
     if show_trades <= 0:
         return
@@ -154,6 +183,13 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
+    if args.csv_dir:
+        return _run_all_months(args)
+    else:
+        return _run_single(args)
+
+
+def _run_single(args) -> int:
     try:
         artifacts = run_backtest(
             BacktestRunConfig(
@@ -176,6 +212,34 @@ def main() -> int:
 
     print_summary(artifacts)
     print_recent_trades(artifacts, args.show_trades)
+    return 0
+
+
+def _run_all_months(args) -> int:
+    try:
+        result = run_all_months(
+            csv_dir=Path(args.csv_dir),
+            strategy_name=args.strategy,
+            symbol=args.symbol,
+            timeframe=args.timeframe,
+            pip_size=args.pip_size,
+            sl_pips=args.sl_pips,
+            tp_pips=args.tp_pips,
+            intrabar_fill_policy=IntrabarFillPolicy(args.intrabar_fill_policy),
+            close_open_position_at_end=not args.keep_open_position,
+            initial_balance=args.initial_balance,
+            money_per_pip=args.money_per_pip,
+        )
+    except (CsvLoadError, BacktestSimulationError, ValueError) as exc:
+        print(f"[ERROR] {exc}")
+        return 1
+
+    for label, artifacts in result.monthly_artifacts:
+        print(f"\n--- {label} ---")
+        print_summary(artifacts)
+
+    print()
+    print_aggregate_summary(result)
     return 0
 
 
