@@ -62,3 +62,11 @@ build/
 .coverage
 htmlcov/
 
+# =========================
+# Claude Orchestrator
+# =========================
+.claude_orchestrator/*
+
+# docs だけは追跡する
+!.claude_orchestrator/docs/
+!.claude_orchestrator/docs/**
