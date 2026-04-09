@@ -733,6 +733,56 @@ exploration_loop.py に csv_dir 指定時の全月横断評価（evaluate_cross_
 ### 注意点
 - 方針文書は方針のみであり、exploration_loop の bollinger 系対応実装が未着手のため、方針と実装の乖離が後続タスクまで続く
 
+## TASK-0042 : exploration_loop を bollinger 系既存戦術のパラメータオーバーライド探索に改修
+
+- 実行日時: 2026-04-09 22:51
+- task_type: refactor
+- risk_level: low
+
+### 変更内容
+director revise 指摘の2点（LoopConfig.timeframe デフォルト値 M5→M1 復元、未使用 StrategyParamSpec import 削除）を修正完了。
+
+### 関連ファイル
+- src/backtest/exploration_loop.py
+
+### 注意点
+- 実データ CSV を用いた run_bollinger_exploration / run_bollinger_exploration_loop の結合テストが未実施（後続タスクで対応必須）
+- generate_bollinger_param_variations で base_overrides が空 dict の場合にベースと同一パラメータが生成される可能性がある
+- BOLLINGER_PARAM_VARIATION_RANGES の値域は初期値であり、実バックテスト結果に基づく調整が必要
+
+## TASK-0043 : feature_inventory.md の戦術パラメータ探索ループを bollinger オーバーライド探索対応済みに更新
+
+- 実行日時: 2026-04-09 22:56
+- task_type: docs
+- risk_level: low
+
+### 変更内容
+feature_inventory.md の「戦術パラメータ探索ループ」セクションの task_split_notes と notes を更新し、TASK-0042 で実装された bollinger 系パラメータオーバーライド探索の完了を反...
+
+### 関連ファイル
+- .claude_orchestrator/docs/feature_inventory.md
+
+### 注意点
+- 実データ CSV を用いた run_bollinger_exploration / run_bollinger_exploration_loop の結合テストが未実施（TASK-0042 carry_over、docs に明記済み）
+- feature_inventory.md に先行タスク（TASK-0040/0041）由来の未コミット差分が残存しており整理コミットが必要
+
+## TASK-0044 : feature_inventory.md・exploration_loop.py 未コミット差分の整理コミット
+
+- 実行日時: 2026-04-09 23:02
+- task_type: chore
+- risk_level: low
+
+### 変更内容
+feature_inventory.md と exploration_loop.py の TASK-0040/0041/0042/0043 由来の未コミット差分を精査し、意図しない変更がないことを確認のうえ整理コミットを実施した。
+
+### 関連ファイル
+- .claude_orchestrator/docs/feature_inventory.md
+- src/backtest/exploration_loop.py
+
+### 注意点
+- task_history_archive.md / 過去TASK作業記録.md / 最適化方針_bollinger戦略.md の未コミット差分が残存しており、後続タスクの git diff ノイズとして影響する
+- exploration_loop.py の bollinger 系探索モード（run_bollinger_exploration / run_bollinger_exploration_loop）は実データ CSV での結合テストが未実施（TASK-0042 carry_over）
+
 
 
 
