@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from backtest.aggregate_stats import AggregateStats
+from backtest.evaluator import evaluate_cross_month, evaluate_integrated
 from backtest.service import AllMonthsResult
 from backtest_gui_app.widgets.time_series_chart_widget import TimeSeriesChartWidget
 
@@ -138,6 +139,10 @@ class AllMonthsTab(QWidget):
             ("deficit_month_count", "Deficit Months"),
             ("max_consecutive_deficit", "Max Consecutive Deficit"),
             ("avg_mfe_mae_ratio", "Avg MFE/MAE"),
+            ("cross_month_verdict", "Cross-Month Verdict"),
+            ("cross_month_reasons", "Cross-Month Reasons"),
+            ("integrated_verdict", "Integrated Verdict"),
+            ("integrated_reasons", "Integrated Reasons"),
         ]
 
         for row, (key, label_text) in enumerate(fields_left):
@@ -229,6 +234,14 @@ class AllMonthsTab(QWidget):
         labels["avg_mfe_mae_ratio"].setText(
             f"{agg.avg_mfe_mae_ratio:.2f}" if agg.avg_mfe_mae_ratio is not None else "-"
         )
+
+        cross_eval = evaluate_cross_month(agg)
+        labels["cross_month_verdict"].setText(cross_eval.verdict.value.upper())
+        labels["cross_month_reasons"].setText("; ".join(cross_eval.reasons) if cross_eval.reasons else "-")
+
+        integrated_eval = evaluate_integrated(agg)
+        labels["integrated_verdict"].setText(integrated_eval.verdict.value.upper())
+        labels["integrated_reasons"].setText("; ".join(integrated_eval.reasons) if integrated_eval.reasons else "-")
 
     def _format_pf(self, gross_profit: float, gross_loss: float) -> str:
         if gross_loss == 0:
