@@ -194,6 +194,8 @@ class BacktestStats:
     average_loss_pips: float
     profit_factor: float | None
     max_drawdown_pips: float
+    gross_profit_pips: float
+    gross_loss_pips: float
     final_open_position_type: str | None
 
 

@@ -10,7 +10,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backtest.csv_loader import CsvLoadError
-from backtest.service import BacktestRunConfig, run_backtest, run_all_months
+from backtest.service import BacktestRunConfig, run_backtest, run_all_months, compare_ab
 from backtest.simulator import BacktestSimulationError, IntrabarFillPolicy
 
 
@@ -82,6 +82,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=100.0,
         help="Converted monetary value of 1 pip.",
+    )
+    parser.add_argument(
+        "--compare-ab",
+        action="store_true",
+        help="Run A-lane / B-lane / A+B combo comparison. Requires --csv-dir and --strategy (combo strategy name).",
     )
     return parser
 
@@ -179,11 +184,94 @@ def print_recent_trades(artifacts, show_trades: int) -> None:
         )
 
 
+def print_compare_ab_table(result) -> None:
+    a = result.lane_a_result.aggregate
+    b = result.lane_b_result.aggregate
+    c = result.combo_result.aggregate
+
+    labels = [
+        f"A ({result.lane_a_strategy})",
+        f"B ({result.lane_b_strategy})",
+        f"A+B ({result.combo_strategy})",
+    ]
+    aggregates = [a, b, c]
+
+    col_width = max(len(lbl) for lbl in labels) + 2
+    col_width = max(col_width, 16)
+    metric_width = 30
+
+    header = f"{'Metric':<{metric_width}}"
+    for lbl in labels:
+        header += f"{lbl:>{col_width}}"
+    sep = "=" * len(header)
+
+    print(sep)
+    print("A / B / A+B Comparison")
+    print(sep)
+    print(header)
+    print("-" * len(header))
+
+    rows = [
+        ("Months", [str(ag.month_count) for ag in aggregates]),
+        ("Total trades", [str(ag.total_trades) for ag in aggregates]),
+        ("Total wins", [str(ag.total_wins) for ag in aggregates]),
+        ("Total losses", [str(ag.total_losses) for ag in aggregates]),
+        ("Win rate (%)", [f"{ag.overall_win_rate:.2f}" for ag in aggregates]),
+        ("Total pips", [f"{ag.total_pips:.2f}" for ag in aggregates]),
+        ("Avg pips/month", [f"{ag.average_pips_per_month:.2f}" for ag in aggregates]),
+        ("Profit factor", [_format_profit_factor(ag.overall_profit_factor) for ag in aggregates]),
+        ("Max DD pips", [f"{ag.max_drawdown_pips:.2f}" for ag in aggregates]),
+        ("Pips stddev", [
+            f"{ag.monthly_pips_stddev:.2f}" if ag.monthly_pips_stddev is not None else "N/A"
+            for ag in aggregates
+        ]),
+        ("Deficit months", [str(ag.deficit_month_count) for ag in aggregates]),
+        ("Max consec deficit", [str(ag.max_consecutive_deficit_months) for ag in aggregates]),
+    ]
+
+    for metric, values in rows:
+        line = f"{metric:<{metric_width}}"
+        for val in values:
+            line += f"{val:>{col_width}}"
+        print(line)
+
+    print(sep)
+
+    # Monthly breakdown
+    print()
+    print("Monthly pips breakdown:")
+    month_header = f"{'Month':<{metric_width}}"
+    for lbl in labels:
+        month_header += f"{lbl:>{col_width}}"
+    print(month_header)
+    print("-" * len(month_header))
+
+    for i, entry_a in enumerate(a.monthly_entries):
+        label = entry_a.label
+        vals = []
+        for ag in aggregates:
+            if i < len(ag.monthly_entries):
+                vals.append(f"{ag.monthly_entries[i].total_pips:.2f}")
+            else:
+                vals.append("N/A")
+        line = f"{label:<{metric_width}}"
+        for val in vals:
+            line += f"{val:>{col_width}}"
+        print(line)
+
+    print(sep)
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
-    if args.csv_dir:
+    if args.compare_ab:
+        if not args.csv_dir:
+            print("[ERROR] --compare-ab requires --csv-dir")
+            return 1
+        return _run_compare_ab(args)
+    elif args.csv_dir:
         return _run_all_months(args)
     else:
         return _run_single(args)
@@ -240,6 +328,29 @@ def _run_all_months(args) -> int:
 
     print()
     print_aggregate_summary(result)
+    return 0
+
+
+def _run_compare_ab(args) -> int:
+    try:
+        result = compare_ab(
+            csv_dir=Path(args.csv_dir),
+            combo_strategy_name=args.strategy,
+            symbol=args.symbol,
+            timeframe=args.timeframe,
+            pip_size=args.pip_size,
+            sl_pips=args.sl_pips,
+            tp_pips=args.tp_pips,
+            intrabar_fill_policy=IntrabarFillPolicy(args.intrabar_fill_policy),
+            close_open_position_at_end=not args.keep_open_position,
+            initial_balance=args.initial_balance,
+            money_per_pip=args.money_per_pip,
+        )
+    except (CsvLoadError, BacktestSimulationError, ValueError) as exc:
+        print(f"[ERROR] {exc}")
+        return 1
+
+    print_compare_ab_table(result)
     return 0
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtWidgets import (
     QFileDialog,
     QMainWindow,
@@ -16,16 +16,94 @@ from PySide6.QtWidgets import (
 )
 
 from backtest.csv_loader import CsvLoadError
-from backtest.service import BacktestRunArtifacts, run_backtest
-from backtest.simulator import BacktestSimulationError
+from backtest.service import (
+    AllMonthsResult,
+    BacktestRunArtifacts,
+    BacktestRunConfig,
+    run_all_months,
+    run_backtest,
+)
+from backtest.simulator import BacktestSimulationError, IntrabarFillPolicy
 from backtest_gui_app.constants import DEFAULT_DATA_DIR, DEFAULT_STRATEGIES_DIR, REPO_ROOT
 from backtest_gui_app.helpers import list_csv_paths, list_strategy_names
 from backtest_gui_app.presenters.result_presenter import BacktestResultPresenter
 from backtest_gui_app.services.run_config_builder import build_run_config
+from backtest_gui_app.views.all_months_tab import AllMonthsTab
 from backtest_gui_app.views.chart_overview_tab import ChartOverviewTab
 from backtest_gui_app.views.input_panel import InputPanel
 from backtest_gui_app.views.result_tabs import ResultTabs
 from backtest_gui_app.views.summary_panel import SummaryPanel
+
+
+class _AllMonthsCancelled(Exception):
+    """Raised inside progress_callback to abort run_all_months loop."""
+
+
+class AllMonthsWorker(QThread):
+    """Worker thread that runs backtest for each month and emits progress."""
+
+    progress = Signal(int, int)  # (completed_count, total_count)
+    finished_ok = Signal(object)  # AllMonthsResult
+    finished_error = Signal(str)  # error message
+    finished_cancelled = Signal()  # cancelled by user
+
+    def __init__(
+        self,
+        csv_dir: Path,
+        strategy_name: str,
+        symbol: str,
+        timeframe: str,
+        pip_size: float,
+        sl_pips: float,
+        tp_pips: float,
+        intrabar_fill_policy: IntrabarFillPolicy,
+        close_open_position_at_end: bool,
+        initial_balance: float,
+        money_per_pip: float,
+        strategy_params: dict[str, float] | None = None,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self._csv_dir = csv_dir
+        self._strategy_name = strategy_name
+        self._symbol = symbol
+        self._timeframe = timeframe
+        self._pip_size = pip_size
+        self._sl_pips = sl_pips
+        self._tp_pips = tp_pips
+        self._intrabar_fill_policy = intrabar_fill_policy
+        self._close_open_position_at_end = close_open_position_at_end
+        self._initial_balance = initial_balance
+        self._money_per_pip = money_per_pip
+        self._strategy_params = strategy_params
+
+    def _progress_with_cancel_check(self, completed: int, total: int) -> None:
+        if self.isInterruptionRequested():
+            raise _AllMonthsCancelled()
+        self.progress.emit(completed, total)
+
+    def run(self) -> None:
+        try:
+            result = run_all_months(
+                csv_dir=self._csv_dir,
+                strategy_name=self._strategy_name,
+                symbol=self._symbol,
+                timeframe=self._timeframe,
+                pip_size=self._pip_size,
+                sl_pips=self._sl_pips,
+                tp_pips=self._tp_pips,
+                intrabar_fill_policy=self._intrabar_fill_policy,
+                close_open_position_at_end=self._close_open_position_at_end,
+                initial_balance=self._initial_balance,
+                money_per_pip=self._money_per_pip,
+                progress_callback=self._progress_with_cancel_check,
+                strategy_params=self._strategy_params,
+            )
+            self.finished_ok.emit(result)
+        except _AllMonthsCancelled:
+            self.finished_cancelled.emit()
+        except Exception as exc:
+            self.finished_error.emit(str(exc))
 
 
 class BacktestMainWindow(QMainWindow):
@@ -36,11 +114,13 @@ class BacktestMainWindow(QMainWindow):
 
         self._latest_artifacts: BacktestRunArtifacts | None = None
         self._syncing_trade_selection = False
+        self._all_months_worker: AllMonthsWorker | None = None
 
         self.input_panel = InputPanel()
         self.summary_panel = SummaryPanel()
         self.result_tabs_panel = ResultTabs()
         self.chart_overview_tab = ChartOverviewTab()
+        self.all_months_tab = AllMonthsTab()
 
         self._presenter = BacktestResultPresenter(
             summary_panel=self.summary_panel,
@@ -55,6 +135,9 @@ class BacktestMainWindow(QMainWindow):
         self._refresh_strategy_list()
         self._refresh_csv_list()
         self._apply_default_values()
+        self._on_strategy_changed(
+            self.input_panel.strategy_combo.currentText()
+        )
         self._clear_result_views()
 
     def _build_layout(self) -> None:
@@ -68,6 +151,7 @@ class BacktestMainWindow(QMainWindow):
         self.page_tabs = QTabWidget()
         self.page_tabs.addTab(self._build_standard_page(), "Standard")
         self.page_tabs.addTab(self.chart_overview_tab, "Chart view")
+        self.page_tabs.addTab(self.all_months_tab, "All Months")
 
         root_layout.addWidget(self.page_tabs)
 
@@ -125,6 +209,15 @@ class BacktestMainWindow(QMainWindow):
         self.input_panel.export_trades_csv_button.clicked.connect(
             self._export_trades_csv
         )
+        self.input_panel.strategy_combo.currentTextChanged.connect(
+            self._on_strategy_changed
+        )
+
+        self.all_months_tab.browse_dir_button.clicked.connect(
+            self._browse_csv_directory
+        )
+        self.all_months_tab.run_all_button.clicked.connect(self._run_all_months)
+        self.all_months_tab.cancel_button.clicked.connect(self._cancel_all_months)
 
         self.result_tabs_panel.trades_table.itemSelectionChanged.connect(
             self._on_primary_trade_selection_changed
@@ -239,6 +332,123 @@ class BacktestMainWindow(QMainWindow):
             self.chart_overview_tab.detail_tabs.trades_table
         )
         self.chart_overview_tab.linked_chart.clear_highlight()
+
+    def _browse_csv_directory(self) -> None:
+        start_dir = str(DEFAULT_DATA_DIR if DEFAULT_DATA_DIR.exists() else REPO_ROOT)
+        selected = QFileDialog.getExistingDirectory(
+            self,
+            "Select CSV Directory",
+            start_dir,
+        )
+        if selected:
+            self.all_months_tab.csv_dir_edit.setText(selected)
+
+    def _run_all_months(self) -> None:
+        if self._all_months_worker is not None and self._all_months_worker.isRunning():
+            return
+
+        csv_dir_text = self.all_months_tab.csv_dir_edit.text().strip()
+        if not csv_dir_text:
+            self._show_error("CSV directory is not selected.")
+            return
+
+        csv_dir = Path(csv_dir_text)
+        if not csv_dir.is_dir():
+            self._show_error(f"Directory not found: {csv_dir}")
+            return
+
+        strategy_name = self.input_panel.strategy_combo.currentText().strip()
+        if not strategy_name:
+            self._show_error("Strategy is not selected.")
+            return
+
+        try:
+            pip_size = float(self.input_panel.pip_size_edit.text().strip() or "0.01")
+            sl_pips = float(self.input_panel.sl_pips_edit.text().strip() or "10")
+            tp_pips = float(self.input_panel.tp_pips_edit.text().strip() or "10")
+            initial_balance = float(
+                self.input_panel.initial_balance_edit.text().strip() or "1000000"
+            )
+            risk_percent = float(
+                self.input_panel.risk_percent_edit.text().strip() or "1.0"
+            )
+            money_per_pip = (initial_balance * risk_percent / 100.0) / sl_pips
+
+            policy_text = self.input_panel.intrabar_policy_combo.currentText().strip()
+            policy = IntrabarFillPolicy(policy_text)
+        except ValueError as exc:
+            self._show_error(str(exc))
+            return
+
+        self.all_months_tab.run_all_button.setEnabled(False)
+        self.all_months_tab.cancel_button.setVisible(True)
+        self.all_months_tab.progress_bar.setValue(0)
+        self.all_months_tab.progress_bar.setVisible(True)
+        self.all_months_tab.clear_results()
+        self.input_panel.notes_text.setPlainText("Running all months...")
+
+        strategy_params = self.input_panel.get_strategy_param_overrides() or None
+
+        self._all_months_worker = AllMonthsWorker(
+            csv_dir=csv_dir,
+            strategy_name=strategy_name,
+            symbol=self.input_panel.symbol_edit.text().strip() or "BACKTEST",
+            timeframe=self.input_panel.timeframe_edit.text().strip() or "M1",
+            pip_size=pip_size,
+            sl_pips=sl_pips,
+            tp_pips=tp_pips,
+            intrabar_fill_policy=policy,
+            close_open_position_at_end=self.input_panel.close_position_checkbox.isChecked(),
+            initial_balance=initial_balance,
+            money_per_pip=money_per_pip,
+            strategy_params=strategy_params,
+            parent=self,
+        )
+        self._all_months_worker.progress.connect(self._on_all_months_progress)
+        self._all_months_worker.finished_ok.connect(self._on_all_months_finished)
+        self._all_months_worker.finished_error.connect(self._on_all_months_error)
+        self._all_months_worker.finished_cancelled.connect(self._on_all_months_cancelled)
+        self._all_months_worker.start()
+
+    def _on_all_months_progress(self, completed: int, total: int) -> None:
+        percent = int(completed / total * 100) if total > 0 else 0
+        self.all_months_tab.progress_bar.setValue(percent)
+        self.input_panel.notes_text.setPlainText(
+            f"Running all months... ({completed}/{total})"
+        )
+
+    def _cancel_all_months(self) -> None:
+        if self._all_months_worker is not None and self._all_months_worker.isRunning():
+            self._all_months_worker.requestInterruption()
+            self.all_months_tab.cancel_button.setEnabled(False)
+
+    def _reset_all_months_ui(self) -> None:
+        self.all_months_tab.run_all_button.setEnabled(True)
+        self.all_months_tab.cancel_button.setVisible(False)
+        self.all_months_tab.cancel_button.setEnabled(True)
+        self.all_months_tab.progress_bar.setVisible(False)
+        self.all_months_tab.progress_bar.setValue(0)
+        self._all_months_worker = None
+
+    def _on_all_months_finished(self, result: AllMonthsResult) -> None:
+        self._reset_all_months_ui()
+
+        self.all_months_tab.display_result(result)
+        self.input_panel.notes_text.setPlainText(
+            f"All months completed.\n"
+            f"Months: {result.aggregate.month_count}\n"
+            f"Total trades: {result.aggregate.total_trades}\n"
+            f"Total pips: {result.aggregate.total_pips:.2f}\n"
+            f"Win rate: {result.aggregate.overall_win_rate:.2f}%"
+        )
+
+    def _on_all_months_error(self, message: str) -> None:
+        self._reset_all_months_ui()
+        self._show_error(message)
+
+    def _on_all_months_cancelled(self) -> None:
+        self._reset_all_months_ui()
+        self.input_panel.notes_text.setPlainText("All months execution cancelled.")
 
     def _export_trades_csv(self) -> None:
         if self._latest_artifacts is None or not self._latest_artifacts.trade_rows:
@@ -498,6 +708,9 @@ class BacktestMainWindow(QMainWindow):
             table.setCurrentCell(row_index, 0)
         finally:
             table.blockSignals(False)
+
+    def _on_strategy_changed(self, strategy_name: str) -> None:
+        self.input_panel.load_strategy_params(strategy_name.strip())
 
     def _show_error(self, message: str) -> None:
         self.input_panel.notes_text.setPlainText(f"Error:\n{message}")

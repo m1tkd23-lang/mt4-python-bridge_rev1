@@ -13,10 +13,13 @@ from mt4_bridge.strategies.bollinger_range_A_guarded import (
     evaluate_bollinger_range_A_guarded,
     required_bars as range_required_bars,
 )
-from mt4_bridge.strategies.bollinger_trend_B3_weak_start_v3_1 import (
-    evaluate_bollinger_trend_B3_weak_start_v3_1,
+from mt4_bridge.strategies.bollinger_trend_B3_weak_start import (
+    evaluate_bollinger_trend_B3_weak_start,
     required_bars as trend_required_bars,
 )
+
+LANE_A_STRATEGY = "bollinger_range_A_guarded"
+LANE_B_STRATEGY = "bollinger_trend_B3_weak_start"
 
 RANGE_MAGIC_NUMBER = 44001
 TREND_MAGIC_NUMBER = 44002
@@ -104,10 +107,10 @@ def evaluate_bollinger_combo_AB_v1_signals(
         strategy_name,
     )
     trend_decision = _rename_strategy(
-        evaluate_bollinger_trend_B3_weak_start_v3_1(
+        evaluate_bollinger_trend_B3_weak_start(
             market_snapshot=market_snapshot,
             position_snapshot=trend_snapshot,
-            strategy_name="bollinger_trend_B3_weak_start_v3_1",
+            strategy_name="bollinger_trend_B3_weak_start",
         ),
         strategy_name,
     )

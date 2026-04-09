@@ -63,3 +63,40 @@ class TimeSeriesChartWidget(QWidget):
 
         self._apply_default_layout()
         self._canvas.draw_idle()
+
+    def plot_series_with_vlines(
+        self,
+        x_values: list[datetime],
+        y_values: list[float],
+        title: str,
+        y_label: str,
+        vline_positions: list[datetime] | None = None,
+    ) -> None:
+        self._figure.clear()
+        ax = self._figure.add_subplot(111)
+
+        if not x_values or not y_values:
+            ax.set_title(f"{title} (no data)")
+            ax.grid(True)
+            self._apply_default_layout()
+            self._canvas.draw_idle()
+            return
+
+        ax.plot(x_values, y_values)
+        ax.set_title(title)
+        ax.set_ylabel(y_label)
+        ax.grid(True, linewidth=0.4)
+
+        if vline_positions:
+            for vx in vline_positions:
+                ax.axvline(x=vx, color="gray", linestyle="--", linewidth=0.6, alpha=0.7)
+
+        ax.axhline(y=0, color="black", linewidth=0.5)
+
+        locator = mdates.AutoDateLocator()
+        formatter = mdates.ConciseDateFormatter(locator)
+        ax.xaxis.set_major_locator(locator)
+        ax.xaxis.set_major_formatter(formatter)
+
+        self._apply_default_layout()
+        self._canvas.draw_idle()

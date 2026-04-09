@@ -50,6 +50,8 @@ def build_run_config(input_panel: InputPanel) -> BacktestRunConfig:
     money_per_pip = risk_amount / sl_pips
     lot_size = money_per_pip / USDJPY_YEN_PER_PIP_PER_1LOT
 
+    strategy_params = input_panel.get_strategy_param_overrides() or None
+
     return BacktestRunConfig(
         csv_path=csv_path,
         strategy_name=strategy_name,
@@ -64,6 +66,7 @@ def build_run_config(input_panel: InputPanel) -> BacktestRunConfig:
         money_per_pip=money_per_pip,
         risk_percent=risk_percent,
         lot_size=lot_size,
+        strategy_params=strategy_params,
     )
 
 

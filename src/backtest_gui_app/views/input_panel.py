@@ -4,18 +4,21 @@ from __future__ import annotations
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFormLayout,
     QGridLayout,
     QLabel,
     QLineEdit,
     QPushButton,
     QSizePolicy,
+    QSpinBox,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from backtest.simulator import IntrabarFillPolicy
+from backtest_gui_app.services.strategy_params import StrategyParamSpec, get_param_specs
 from backtest_gui_app.widgets.collapsible_section import CollapsibleSection
 
 
@@ -23,16 +26,22 @@ class InputPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
+        self._strategy_param_widgets: list[
+            tuple[StrategyParamSpec, QSpinBox | QDoubleSpinBox]
+        ] = []
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
         source_section = self._build_source_section()
         params_section = self._build_parameters_section()
+        self._strategy_params_section = self._build_strategy_parameters_section()
         status_section = self._build_status_section()
 
         layout.addWidget(source_section)
         layout.addWidget(params_section)
+        layout.addWidget(self._strategy_params_section)
         layout.addWidget(status_section)
         layout.addStretch(1)
 
@@ -139,3 +148,56 @@ class InputPanel(QWidget):
         status_layout.addWidget(self.notes_text)
 
         return CollapsibleSection("Status / Notes", status_box, expanded=True)
+
+    def _build_strategy_parameters_section(self) -> CollapsibleSection:
+        self._strategy_params_box = QWidget()
+        self._strategy_params_layout = QFormLayout(self._strategy_params_box)
+        self._strategy_params_layout.setContentsMargins(0, 0, 0, 0)
+        self._strategy_params_layout.setSpacing(6)
+        return CollapsibleSection(
+            "Strategy Parameters", self._strategy_params_box, expanded=True
+        )
+
+    def load_strategy_params(self, strategy_name: str) -> None:
+        """Populate strategy parameter widgets based on the selected strategy."""
+        # Clear existing widgets
+        self._strategy_param_widgets.clear()
+        while self._strategy_params_layout.rowCount() > 0:
+            self._strategy_params_layout.removeRow(0)
+
+        specs = get_param_specs(strategy_name)
+        if not specs:
+            label = QLabel("(no tunable parameters)")
+            label.setStyleSheet("color: gray;")
+            self._strategy_params_layout.addRow(label)
+            return
+
+        for spec in specs:
+            if spec.param_type == "int":
+                widget = QSpinBox()
+                widget.setMinimum(int(spec.min_val))
+                widget.setMaximum(int(spec.max_val))
+                widget.setSingleStep(int(spec.step))
+                widget.setValue(int(spec.default))
+            else:
+                widget = QDoubleSpinBox()
+                widget.setDecimals(spec.decimals)
+                widget.setMinimum(spec.min_val)
+                widget.setMaximum(spec.max_val)
+                widget.setSingleStep(spec.step)
+                widget.setValue(spec.default)
+
+            self._strategy_params_layout.addRow(spec.label, widget)
+            self._strategy_param_widgets.append((spec, widget))
+
+    def get_strategy_param_overrides(self) -> dict[str, float]:
+        """Return current parameter values as a dict keyed by module_path::name."""
+        overrides: dict[str, float] = {}
+        for spec, widget in self._strategy_param_widgets:
+            key = f"{spec.module_path}::{spec.name}"
+            overrides[key] = widget.value()
+        return overrides
+
+    def get_strategy_param_specs(self) -> list[StrategyParamSpec]:
+        """Return the current list of parameter specs loaded in the UI."""
+        return [spec for spec, _ in self._strategy_param_widgets]

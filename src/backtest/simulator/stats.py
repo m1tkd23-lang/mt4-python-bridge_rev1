@@ -63,5 +63,7 @@ class StatsMixin:
             average_loss_pips=average_loss_pips,
             profit_factor=profit_factor,
             max_drawdown_pips=max_drawdown,
+            gross_profit_pips=gross_profit,
+            gross_loss_pips=gross_loss,
             final_open_position_type=final_open_position_type,
         )

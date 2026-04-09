@@ -66,13 +66,8 @@ def aggregate_monthly_stats(
 
     overall_win_rate = (total_wins / total_trades * 100.0) if total_trades > 0 else 0.0
 
-    gross_profit = 0.0
-    gross_loss = 0.0
-    for _, s in monthly_stats:
-        # Use per-trade level gross profit/loss for accurate PF
-        # Approximate from win/loss counts and averages
-        gross_profit += s.average_win_pips * s.wins if s.wins > 0 else 0.0
-        gross_loss += abs(s.average_loss_pips) * s.losses if s.losses > 0 else 0.0
+    gross_profit = sum(s.gross_profit_pips for _, s in monthly_stats)
+    gross_loss = sum(s.gross_loss_pips for _, s in monthly_stats)
 
     if gross_loss == 0:
         overall_profit_factor = None if gross_profit == 0 else float("inf")

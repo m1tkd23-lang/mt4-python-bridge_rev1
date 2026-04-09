@@ -73,7 +73,7 @@ ENABLE_RANGE_EXTREME_TOUCH_ENTRY = True
 
 def required_bars() -> int:
     return max(
-        BOLLINGER_PERIOD,
+        BOLLINGER_PERIOD + 1,
         RANGE_MA_PERIOD + RANGE_SLOPE_LOOKBACK,
         TREND_MA_PERIOD + TREND_SLOPE_LOOKBACK,
     )

@@ -18,6 +18,9 @@ from mt4_bridge.strategies.bollinger_trend_B import (
     required_bars as trend_required_bars,
 )
 
+LANE_A_STRATEGY = "bollinger_range_A"
+LANE_B_STRATEGY = "bollinger_trend_B"
+
 RANGE_MAGIC_NUMBER = 44001
 TREND_MAGIC_NUMBER = 44002
 
