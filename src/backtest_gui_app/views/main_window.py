@@ -20,6 +20,8 @@ from backtest.service import (
     AllMonthsResult,
     BacktestRunArtifacts,
     BacktestRunConfig,
+    CompareABResult,
+    _resolve_lane_strategies,
     run_all_months,
     run_backtest,
 )
@@ -30,6 +32,7 @@ from backtest_gui_app.presenters.result_presenter import BacktestResultPresenter
 from backtest_gui_app.services.run_config_builder import build_run_config
 from backtest_gui_app.views.all_months_tab import AllMonthsTab
 from backtest_gui_app.views.chart_overview_tab import ChartOverviewTab
+from backtest_gui_app.views.compare_ab_tab import CompareABTab
 from backtest_gui_app.views.input_panel import InputPanel
 from backtest_gui_app.views.result_tabs import ResultTabs
 from backtest_gui_app.views.summary_panel import SummaryPanel
@@ -109,6 +112,105 @@ class AllMonthsWorker(QThread):
             self.finished_error.emit(str(exc))
 
 
+class CompareABWorker(QThread):
+    """Worker thread that runs A/B comparison (3 phases: A, B, combo)."""
+
+    phase_changed = Signal(str)  # phase label ("Lane A", "Lane B", "Combo")
+    progress = Signal(int, int)  # (completed_months_in_phase, total_months)
+    finished_ok = Signal(object)  # CompareABResult
+    finished_error = Signal(str)
+    finished_cancelled = Signal()
+
+    def __init__(
+        self,
+        csv_dir: Path,
+        combo_strategy_name: str,
+        symbol: str,
+        timeframe: str,
+        pip_size: float,
+        sl_pips: float,
+        tp_pips: float,
+        intrabar_fill_policy: IntrabarFillPolicy,
+        close_open_position_at_end: bool,
+        initial_balance: float,
+        money_per_pip: float,
+        strategy_params: dict[str, float] | None = None,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self._csv_dir = csv_dir
+        self._combo_strategy_name = combo_strategy_name
+        self._symbol = symbol
+        self._timeframe = timeframe
+        self._pip_size = pip_size
+        self._sl_pips = sl_pips
+        self._tp_pips = tp_pips
+        self._intrabar_fill_policy = intrabar_fill_policy
+        self._close_open_position_at_end = close_open_position_at_end
+        self._initial_balance = initial_balance
+        self._money_per_pip = money_per_pip
+        self._strategy_params = strategy_params
+
+    def _progress_with_cancel_check(self, completed: int, total: int) -> None:
+        if self.isInterruptionRequested():
+            raise _AllMonthsCancelled()
+        self.progress.emit(completed, total)
+
+    def run(self) -> None:
+        try:
+            lane_a_name, lane_b_name = _resolve_lane_strategies(
+                self._combo_strategy_name
+            )
+
+            common_kwargs = dict(
+                csv_dir=self._csv_dir,
+                symbol=self._symbol,
+                timeframe=self._timeframe,
+                pip_size=self._pip_size,
+                sl_pips=self._sl_pips,
+                tp_pips=self._tp_pips,
+                intrabar_fill_policy=self._intrabar_fill_policy,
+                close_open_position_at_end=self._close_open_position_at_end,
+                initial_balance=self._initial_balance,
+                money_per_pip=self._money_per_pip,
+                progress_callback=self._progress_with_cancel_check,
+                strategy_params=self._strategy_params,
+            )
+
+            self.phase_changed.emit("Lane A")
+            lane_a_result = run_all_months(
+                strategy_name=lane_a_name, **common_kwargs
+            )
+            if self.isInterruptionRequested():
+                raise _AllMonthsCancelled()
+
+            self.phase_changed.emit("Lane B")
+            lane_b_result = run_all_months(
+                strategy_name=lane_b_name, **common_kwargs
+            )
+            if self.isInterruptionRequested():
+                raise _AllMonthsCancelled()
+
+            self.phase_changed.emit("Combo")
+            combo_result = run_all_months(
+                strategy_name=self._combo_strategy_name, **common_kwargs
+            )
+
+            result = CompareABResult(
+                lane_a_strategy=lane_a_name,
+                lane_b_strategy=lane_b_name,
+                combo_strategy=self._combo_strategy_name,
+                lane_a_result=lane_a_result,
+                lane_b_result=lane_b_result,
+                combo_result=combo_result,
+            )
+            self.finished_ok.emit(result)
+        except _AllMonthsCancelled:
+            self.finished_cancelled.emit()
+        except Exception as exc:
+            self.finished_error.emit(str(exc))
+
+
 class BacktestMainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -118,12 +220,14 @@ class BacktestMainWindow(QMainWindow):
         self._latest_artifacts: BacktestRunArtifacts | None = None
         self._syncing_trade_selection = False
         self._all_months_worker: AllMonthsWorker | None = None
+        self._compare_ab_worker: CompareABWorker | None = None
 
         self.input_panel = InputPanel()
         self.summary_panel = SummaryPanel()
         self.result_tabs_panel = ResultTabs()
         self.chart_overview_tab = ChartOverviewTab()
         self.all_months_tab = AllMonthsTab()
+        self.compare_ab_tab = CompareABTab()
 
         self._presenter = BacktestResultPresenter(
             summary_panel=self.summary_panel,
@@ -155,6 +259,7 @@ class BacktestMainWindow(QMainWindow):
         self.page_tabs.addTab(self._build_standard_page(), "Standard")
         self.page_tabs.addTab(self.chart_overview_tab, "Chart view")
         self.page_tabs.addTab(self.all_months_tab, "All Months")
+        self.page_tabs.addTab(self.compare_ab_tab, "Compare A/B")
 
         root_layout.addWidget(self.page_tabs)
 
@@ -221,6 +326,12 @@ class BacktestMainWindow(QMainWindow):
         )
         self.all_months_tab.run_all_button.clicked.connect(self._run_all_months)
         self.all_months_tab.cancel_button.clicked.connect(self._cancel_all_months)
+
+        self.compare_ab_tab.browse_dir_button.clicked.connect(
+            self._browse_compare_ab_directory
+        )
+        self.compare_ab_tab.run_button.clicked.connect(self._run_compare_ab)
+        self.compare_ab_tab.cancel_button.clicked.connect(self._cancel_compare_ab)
 
         self.result_tabs_panel.trades_table.itemSelectionChanged.connect(
             self._on_primary_trade_selection_changed
@@ -457,6 +568,131 @@ class BacktestMainWindow(QMainWindow):
     def _on_all_months_cancelled(self) -> None:
         self._reset_all_months_ui()
         self.input_panel.notes_text.setPlainText("All months execution cancelled.")
+
+    # --- Compare A/B ---
+
+    def _browse_compare_ab_directory(self) -> None:
+        start_dir = str(DEFAULT_DATA_DIR if DEFAULT_DATA_DIR.exists() else REPO_ROOT)
+        selected = QFileDialog.getExistingDirectory(
+            self,
+            "Select CSV Directory",
+            start_dir,
+        )
+        if selected:
+            self.compare_ab_tab.csv_dir_edit.setText(selected)
+
+    def _run_compare_ab(self) -> None:
+        if self._compare_ab_worker is not None and self._compare_ab_worker.isRunning():
+            return
+
+        csv_dir_text = self.compare_ab_tab.csv_dir_edit.text().strip()
+        if not csv_dir_text:
+            self._show_error("CSV directory is not selected.")
+            return
+
+        csv_dir = Path(csv_dir_text)
+        if not csv_dir.is_dir():
+            self._show_error(f"Directory not found: {csv_dir}")
+            return
+
+        strategy_name = self.input_panel.strategy_combo.currentText().strip()
+        if not strategy_name:
+            self._show_error("Strategy is not selected.")
+            return
+
+        try:
+            pip_size = float(self.input_panel.pip_size_edit.text().strip() or "0.01")
+            sl_pips = float(self.input_panel.sl_pips_edit.text().strip() or "10")
+            tp_pips = float(self.input_panel.tp_pips_edit.text().strip() or "10")
+            initial_balance = float(
+                self.input_panel.initial_balance_edit.text().strip() or "1000000"
+            )
+            risk_percent = float(
+                self.input_panel.risk_percent_edit.text().strip() or "1.0"
+            )
+            money_per_pip = (initial_balance * risk_percent / 100.0) / sl_pips
+
+            policy_text = self.input_panel.intrabar_policy_combo.currentText().strip()
+            policy = IntrabarFillPolicy(policy_text)
+        except ValueError as exc:
+            self._show_error(str(exc))
+            return
+
+        self.compare_ab_tab.run_button.setEnabled(False)
+        self.compare_ab_tab.cancel_button.setVisible(True)
+        self.compare_ab_tab.progress_bar.setValue(0)
+        self.compare_ab_tab.progress_bar.setVisible(True)
+        self.compare_ab_tab.phase_label.setVisible(True)
+        self.compare_ab_tab.phase_label.setText("")
+        self.compare_ab_tab.clear_results()
+        self.input_panel.notes_text.setPlainText("Running Compare A/B...")
+
+        strategy_params = self.input_panel.get_strategy_param_overrides() or None
+
+        self._compare_ab_worker = CompareABWorker(
+            csv_dir=csv_dir,
+            combo_strategy_name=strategy_name,
+            symbol=self.input_panel.symbol_edit.text().strip() or "BACKTEST",
+            timeframe=self.input_panel.timeframe_edit.text().strip() or "M1",
+            pip_size=pip_size,
+            sl_pips=sl_pips,
+            tp_pips=tp_pips,
+            intrabar_fill_policy=policy,
+            close_open_position_at_end=self.input_panel.close_position_checkbox.isChecked(),
+            initial_balance=initial_balance,
+            money_per_pip=money_per_pip,
+            strategy_params=strategy_params,
+            parent=self,
+        )
+        self._compare_ab_worker.phase_changed.connect(self._on_compare_ab_phase)
+        self._compare_ab_worker.progress.connect(self._on_compare_ab_progress)
+        self._compare_ab_worker.finished_ok.connect(self._on_compare_ab_finished)
+        self._compare_ab_worker.finished_error.connect(self._on_compare_ab_error)
+        self._compare_ab_worker.finished_cancelled.connect(self._on_compare_ab_cancelled)
+        self._compare_ab_worker.start()
+
+    def _on_compare_ab_phase(self, phase: str) -> None:
+        self.compare_ab_tab.phase_label.setText(phase)
+        self.compare_ab_tab.progress_bar.setValue(0)
+        self.input_panel.notes_text.setPlainText(f"Running Compare A/B... ({phase})")
+
+    def _on_compare_ab_progress(self, completed: int, total: int) -> None:
+        percent = int(completed / total * 100) if total > 0 else 0
+        self.compare_ab_tab.progress_bar.setValue(percent)
+
+    def _cancel_compare_ab(self) -> None:
+        if self._compare_ab_worker is not None and self._compare_ab_worker.isRunning():
+            self._compare_ab_worker.requestInterruption()
+            self.compare_ab_tab.cancel_button.setEnabled(False)
+
+    def _reset_compare_ab_ui(self) -> None:
+        self.compare_ab_tab.run_button.setEnabled(True)
+        self.compare_ab_tab.cancel_button.setVisible(False)
+        self.compare_ab_tab.cancel_button.setEnabled(True)
+        self.compare_ab_tab.progress_bar.setVisible(False)
+        self.compare_ab_tab.progress_bar.setValue(0)
+        self.compare_ab_tab.phase_label.setVisible(False)
+        self._compare_ab_worker = None
+
+    def _on_compare_ab_finished(self, result: CompareABResult) -> None:
+        self._reset_compare_ab_ui()
+        self.compare_ab_tab.display_result(result)
+
+        combo_agg = result.combo_result.aggregate
+        self.input_panel.notes_text.setPlainText(
+            f"Compare A/B completed.\n"
+            f"A: {result.lane_a_result.aggregate.total_pips:.2f} pips\n"
+            f"B: {result.lane_b_result.aggregate.total_pips:.2f} pips\n"
+            f"A+B: {combo_agg.total_pips:.2f} pips"
+        )
+
+    def _on_compare_ab_error(self, message: str) -> None:
+        self._reset_compare_ab_ui()
+        self._show_error(message)
+
+    def _on_compare_ab_cancelled(self) -> None:
+        self._reset_compare_ab_ui()
+        self.input_panel.notes_text.setPlainText("Compare A/B execution cancelled.")
 
     def _export_trades_csv(self) -> None:
         if self._latest_artifacts is None or not self._latest_artifacts.trade_rows:

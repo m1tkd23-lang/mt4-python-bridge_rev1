@@ -164,6 +164,7 @@ class BacktestDisplaySummary:
     verdict: str
     verdict_reasons: list[str]
     final_open_position_type: str | None
+    avg_mfe_mae_ratio: float | None = None
 
 
 def build_trade_view_rows(
@@ -379,4 +380,5 @@ def build_display_summary(
         verdict=evaluation.verdict.value,
         verdict_reasons=list(evaluation.reasons),
         final_open_position_type=stats.final_open_position_type,
+        avg_mfe_mae_ratio=stats.avg_mfe_mae_ratio,
     )

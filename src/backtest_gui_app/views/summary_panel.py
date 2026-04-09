@@ -56,6 +56,7 @@ class SummaryPanel(QWidget):
             ("max_drawdown_amount", "Converted max DD"),
             ("max_consecutive_wins", "Max consecutive wins"),
             ("max_consecutive_losses", "Max consecutive losses"),
+            ("avg_mfe_mae_ratio", "Avg MFE/MAE"),
             ("verdict", "Verdict"),
             ("final_open_position_type", "Final open position"),
         ]

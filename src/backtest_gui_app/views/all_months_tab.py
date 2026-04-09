@@ -95,7 +95,7 @@ class AllMonthsTab(QWidget):
 
     def _build_monthly_table(self) -> QTableWidget:
         table = QTableWidget()
-        table.setColumnCount(8)
+        table.setColumnCount(9)
         table.setHorizontalHeaderLabels([
             "Month",
             "Trades",
@@ -105,6 +105,7 @@ class AllMonthsTab(QWidget):
             "Total Pips",
             "Profit Factor",
             "Max DD Pips",
+            "Avg MFE/MAE",
         ])
         header = table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
@@ -136,6 +137,7 @@ class AllMonthsTab(QWidget):
             ("monthly_pips_stddev", "Monthly Stddev"),
             ("deficit_month_count", "Deficit Months"),
             ("max_consecutive_deficit", "Max Consecutive Deficit"),
+            ("avg_mfe_mae_ratio", "Avg MFE/MAE"),
         ]
 
         for row, (key, label_text) in enumerate(fields_left):
@@ -182,6 +184,12 @@ class AllMonthsTab(QWidget):
                     stats.gross_profit_pips, stats.gross_loss_pips
                 )
 
+                mfe_mae_text = (
+                    f"{stats.avg_mfe_mae_ratio:.2f}"
+                    if stats.avg_mfe_mae_ratio is not None
+                    else "-"
+                )
+
                 values = [
                     label,
                     str(stats.trades),
@@ -191,6 +199,7 @@ class AllMonthsTab(QWidget):
                     f"{stats.total_pips:.2f}",
                     pf_text,
                     f"{stats.max_drawdown_pips:.2f}",
+                    mfe_mae_text,
                 ]
 
                 for col_idx, val in enumerate(values):
@@ -217,6 +226,9 @@ class AllMonthsTab(QWidget):
         )
         labels["deficit_month_count"].setText(str(agg.deficit_month_count))
         labels["max_consecutive_deficit"].setText(str(agg.max_consecutive_deficit_months))
+        labels["avg_mfe_mae_ratio"].setText(
+            f"{agg.avg_mfe_mae_ratio:.2f}" if agg.avg_mfe_mae_ratio is not None else "-"
+        )
 
     def _format_pf(self, gross_profit: float, gross_loss: float) -> str:
         if gross_loss == 0:

@@ -160,6 +160,10 @@ def print_aggregate_summary(result) -> None:
         print("  Monthly pips stddev: N/A")
     print(f"  Deficit months: {agg.deficit_month_count}")
     print(f"  Max consecutive deficit months: {agg.max_consecutive_deficit_months}")
+    if agg.avg_mfe_mae_ratio is not None:
+        print(f"  Avg MFE/MAE ratio: {agg.avg_mfe_mae_ratio:.2f}")
+    else:
+        print("  Avg MFE/MAE ratio: N/A")
     print()
     print("Monthly breakdown:")
     for entry in agg.monthly_entries:
@@ -235,6 +239,10 @@ def print_compare_ab_table(result) -> None:
         ]),
         ("Deficit months", [str(ag.deficit_month_count) for ag in aggregates]),
         ("Max consec deficit", [str(ag.max_consecutive_deficit_months) for ag in aggregates]),
+        ("Avg MFE/MAE ratio", [
+            f"{ag.avg_mfe_mae_ratio:.2f}" if ag.avg_mfe_mae_ratio is not None else "N/A"
+            for ag in aggregates
+        ]),
     ]
 
     for metric, values in rows:

@@ -134,6 +134,11 @@ class BacktestResultPresenter:
         labels["max_consecutive_wins"].setText(str(summary.max_consecutive_wins))
         labels["max_consecutive_losses"].setText(str(summary.max_consecutive_losses))
         labels["verdict"].setText(summary.verdict)
+        labels["avg_mfe_mae_ratio"].setText(
+            f"{summary.avg_mfe_mae_ratio:.2f}"
+            if summary.avg_mfe_mae_ratio is not None
+            else "-"
+        )
         labels["final_open_position_type"].setText(
             summary.final_open_position_type
             if summary.final_open_position_type is not None
