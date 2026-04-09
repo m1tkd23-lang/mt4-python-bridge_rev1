@@ -445,6 +445,166 @@ ExecutedTrade に mfe_pips/mae_pips/holding_bars フィールドを追加し、S
 - MFE/MAE は entry bar を含まない（次バーから追跡開始）。MFE=0 ケースの解釈に後続タスクで注意が必要
 - implementer report の risks 記述（entry bar 包含）と実装（entry bar 非包含）に齟齬があるが、実装自体は正しく動作しており本タスクの blocking issue ではない
 
+## TASK-0025 : MFE/MAE ratio による補助品質指標の最小実装（成績算出への統合）
+
+- 実行日時: 2026-04-09 16:27
+- task_type: feature
+- risk_level: low
+
+### 変更内容
+MFE/MAE ratio 補助品質指標を BacktestStats・AggregateStats に追加し、月別平均・全月合算平均を算出する最小実装を完了。CLI 出力にも表示追加済み。
+
+### 関連ファイル
+- src/backtest/simulator/models.py
+- src/backtest/simulator/stats.py
+- src/backtest/aggregate_stats.py
+- src/backtest/runner.py
+- .claude_orchestrator/docs/feature_inventory.md
+
+### 注意点
+- GUI All Months タブに MFE/MAE ratio が表示されない（既存表示は非破壊・後続タスクで対応）
+- 全月合算 avg_mfe_mae_ratio が月別平均の単純平均であり、トレード数加重平均ではない（補助指標のため現時点では許容）
+
+## TASK-0026 : GUI All Months タブへの MFE/MAE ratio 表示追加（月別テーブル列 + aggregate パネル）
+
+- 実行日時: 2026-04-09 16:40
+- task_type: feature
+- risk_level: low
+
+### 変更内容
+All Months タブの月別テーブルに Avg MFE/MAE 列（9列目）を追加し、aggregate パネルに Avg MFE/MAE フィールドを追加した。None 時は "-" 表示、小数点以下2桁表示。
+
+### 関連ファイル
+- src/backtest_gui_app/views/all_months_tab.py
+- .claude_orchestrator/docs/feature_inventory.md
+
+### 注意点
+- 全月合算 avg_mfe_mae_ratio は月別平均の単純平均であり、トレード数加重平均ではない（TASK-0025 から既知・補助指標のため現時点では許容）
+
+## TASK-0027 : Single Month SummaryPanel への avg_mfe_mae_ratio 表示追加
+
+- 実行日時: 2026-04-09 16:57
+- task_type: feature
+- risk_level: low
+
+### 変更内容
+SummaryPanel の summary_fields に ('avg_mfe_mae_ratio', 'Avg MFE/MAE') を追加し、BacktestDisplaySummary への avg_mfe_mae_ratio フィ...
+
+### 関連ファイル
+- src/backtest/view_models.py
+- src/backtest_gui_app/views/summary_panel.py
+- src/backtest_gui_app/presenters/result_presenter.py
+- .claude_orchestrator/docs/feature_inventory.md
+
+### 注意点
+- none
+
+## TASK-0028 : GUI A/B 比較タブの追加（compare_ab GUI 接続）
+
+- 実行日時: 2026-04-09 17:13
+- task_type: feature
+- risk_level: low
+
+### 変更内容
+GUI Compare A/B タブを新規作成し、A単体/B単体/A+B合成の3パターン全月合算成績比較をGUIから実行・表示可能にした。QThread非同期実行・3フェーズプログレス・キャンセル機能・戦術パラメータオーバーライドに対応。
+
+### 関連ファイル
+- src/backtest_gui_app/views/compare_ab_tab.py
+- src/backtest_gui_app/views/main_window.py
+- .claude_orchestrator/docs/feature_inventory.md
+
+### 注意点
+- CompareABWorker が compare_ab() を直接呼ばず内部ロジックを複製しているため、compare_ab() 変更時に乖離リスクあり（現時点では低リスク）
+- GUI 手動起動確認が未実施（import チェックのみ）。ランタイムエラーの潜在可能性は排除できないが構造的リスクは低い
+
+## TASK-0029 : 採択結果の bollinger_combo_AB.py 反映ワークフロー最小実装（CLI パラメータ書き出し）
+
+- 実行日時: 2026-04-09 17:23
+- task_type: feature
+- risk_level: medium
+
+### 変更内容
+CLI ツール apply_params.py を新規作成し、戦術パラメータの恒久書き出し機能を実装。--list / --dry-run / --backup / --set / --lane-a / --lane-b の全モードで動作確...
+
+### 関連ファイル
+- src/backtest/apply_params.py
+- .claude_orchestrator/docs/feature_inventory.md
+
+### 注意点
+- LANE_A/LANE_B 書き換え後の import 文未連動（combo ファイル外の動的ロード機構に依存、現時点では低リスク）
+- 正規表現ベースの定数書き換えは想定外フォーマットに脆弱（現時点の戦術ファイルでは問題なし）
+- StrategyParamSpec 未登録パラメータの型推論フォールバックによる意図しない型変換リスク
+
+## TASK-0030 : completion_definition 全セクション充足度棚卸し・MVP 完成度最終評価
+
+- 実行日時: 2026-04-09 17:36
+- task_type: research
+- risk_level: low
+
+### 変更内容
+completion_definition.md 全8セクション26項目を feature_inventory.md および実装コードと突き合わせ、項目ごとの充足状況を一覧化した。implemented=15, partial=8, not...
+
+### 関連ファイル
+- none
+
+### 注意点
+- feature_inventory と completion_definition の粒度差による status 乖離（fi_match=false 4項目）が未整理のまま残存。後続タスクで整合性修正が必要
+- セクション6（品質）の not_implemented 2項目（月平均利益基準評価・統合採択条件）は新規ロジック実装が必要であり MVP 完成への最大ギャップ
+- セクション8（データ整合性）3項目の partial はすべて MT4 実環境依存であり、バックテスト側のみでは完了できない可能性がある
+
+## TASK-0031 : 月平均利益基準の全月横断評価ロジック実装（completion_definition セクション6 ギャップ解消）
+
+- 実行日時: 2026-04-09 17:44
+- task_type: feature
+- risk_level: medium
+
+### 変更内容
+evaluator.py に全月横断評価関数 evaluate_cross_month() を追加し、all_months_tab の aggregate パネルに Cross-Month Verdict / Reasons 表示を実装した...
+
+### 関連ファイル
+- src/backtest/evaluator.py
+- src/backtest_gui_app/views/all_months_tab.py
+
+### 注意点
+- Cross-Month Reasons の QLabel ワードラップ未設定により長文時の表示切れリスクあり（軽微・後続タスクで対応可）
+- CrossMonthThresholds のデフォルト値（150/200 pips）の実運用データでの妥当性は未検証（閾値パラメータ化済みのため変更容易）
+- all_months_tab.py に未使用インポート CrossMonthThresholds が残存（動作影響なし・後続で清掃可）
+
+## TASK-0032 : 全月合算成績+月別安定性の統合採択条件実装（completion_definition セクション6 最終ギャップ解消）
+
+- 実行日時: 2026-04-09 17:53
+- task_type: feature
+- risk_level: medium
+
+### 変更内容
+evaluate_integrated() を evaluator.py に追加し、全月合算成績と月別安定性を統合した ADOPT/IMPROVE/DISCARD 判定を実装。GUI All Months タブに Integrated Ve...
+
+### 関連ファイル
+- src/backtest/evaluator.py
+- src/backtest_gui_app/views/all_months_tab.py
+- .claude_orchestrator/docs/feature_inventory.md
+
+### 注意点
+- IntegratedThresholds デフォルト値（max_drawdown_pips=200, max_monthly_pips_stddev=300 等）の実運用データでの妥当性は未検証。パラメータ化済みのため変更容易だが初期値が緩すぎる可能性あり
+- GUI 実機動作確認が未実施（import レベルの確認のみ）。レイアウト崩れや表示切れが起きうる
+- min_total_pips=0.0 に対し DISCARD 条件が <= 比較のため total_pips が正確に 0.0 でも DISCARD になる境界値挙動
+
+## TASK-0033 : completion_definition セクション6 status 注釈追記 + feature_inventory「月平均利益基準の探索・確認」partial 更新
+
+- 実行日時: 2026-04-09 18:03
+- task_type: docs
+- risk_level: low
+
+### 変更内容
+feature_inventory.md「全月安定性評価」エントリへのスコープ外変更を revert し、TASK-0033 開始前の状態に復元した。constraint 内の変更（completion_definition.md セクショ...
+
+### 関連ファイル
+- .claude_orchestrator/docs/feature_inventory.md
+
+### 注意点
+- HTML コメント形式の注釈は Markdown レンダラで非表示のため、ソースを直接閲覧しない利用者には情報が伝わらない（機能上は問題なし、将来的に可視形式への変更を検討）
+- feature_inventory「全月安定性評価」エントリの status: partial が実装状態（implemented 相当）と不整合のまま残存（本タスクスコープ外）
+
 
 
 

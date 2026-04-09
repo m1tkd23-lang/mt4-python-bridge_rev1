@@ -48,7 +48,7 @@ class ExplorationConfig:
     strategy_name: str
     csv_path: str
     symbol: str = "BACKTEST"
-    timeframe: str = "M1"
+    timeframe: str = "M5"
     pip_size: float = 0.01
     sl_pips: float = 10.0
     tp_pips: float = 10.0
@@ -181,7 +181,7 @@ class LoopConfig:
     csv_path: str
     base_strategy_name: str = "strategy"
     symbol: str = "BACKTEST"
-    timeframe: str = "M1"
+    timeframe: str = "M5"
     pip_size: float = 0.01
     sl_pips: float = 10.0
     tp_pips: float = 10.0
