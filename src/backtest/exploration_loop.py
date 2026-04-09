@@ -4,6 +4,9 @@
 This module orchestrates exploration cycles of strategy generation and evaluation.
 It supports both single-cycle execution (run_single_exploration) and multi-cycle
 loop execution (run_exploration_loop) with verdict-based control flow.
+
+Bollinger override mode (run_bollinger_exploration / run_bollinger_exploration_loop)
+uses existing strategy files with parameter overrides instead of generating new files.
 """
 from __future__ import annotations
 
@@ -16,11 +19,22 @@ from pathlib import Path
 
 from mt4_bridge.strategy_generator import generate_param_variations, generate_strategy_file
 from backtest.csv_loader import load_historical_bars_csv
+from backtest.aggregate_stats import AggregateStats, aggregate_monthly_stats
 from backtest.simulator import BacktestSimulator, IntrabarFillPolicy
 from backtest.evaluator import (
+    CrossMonthEvaluationResult,
+    CrossMonthThresholds,
     EvaluationResult,
     EvaluationThresholds,
+    IntegratedEvaluationResult,
+    IntegratedThresholds,
     evaluate_backtest,
+    evaluate_cross_month,
+    evaluate_integrated,
+)
+from backtest_gui_app.services.strategy_params import (
+    apply_strategy_overrides,
+    get_param_specs,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,6 +55,9 @@ class ExplorationConfig:
     intrabar_fill_policy: IntrabarFillPolicy = IntrabarFillPolicy.CONSERVATIVE
     strategy_params: dict[str, object] | None = None
     thresholds: EvaluationThresholds | None = None
+    csv_dir: str | None = None
+    cross_month_thresholds: CrossMonthThresholds | None = None
+    integrated_thresholds: IntegratedThresholds | None = None
 
 
 @dataclass(frozen=True)
@@ -51,6 +68,9 @@ class ExplorationResult:
     strategy_file: str
     evaluation: EvaluationResult
     verdict: str
+    cross_month_evaluation: CrossMonthEvaluationResult | None = None
+    integrated_evaluation: IntegratedEvaluationResult | None = None
+    aggregate_stats: AggregateStats | None = None
 
 
 def run_single_exploration(config: ExplorationConfig) -> ExplorationResult:
@@ -89,17 +109,62 @@ def run_single_exploration(config: ExplorationConfig) -> ExplorationResult:
     )
     backtest_result = simulator.run(dataset=dataset)
 
-    # 4. Evaluate
+    # 4. Evaluate single-month
     evaluation = evaluate_backtest(
         stats=backtest_result.stats,
         thresholds=config.thresholds,
     )
 
+    # 5. Cross-month & integrated evaluation (when csv_dir with multiple CSVs available)
+    cross_month_eval: CrossMonthEvaluationResult | None = None
+    integrated_eval: IntegratedEvaluationResult | None = None
+    agg_stats: AggregateStats | None = None
+    final_verdict = evaluation.verdict.value
+
+    if config.csv_dir is not None:
+        csv_dir_path = Path(config.csv_dir)
+        csv_files = sorted(csv_dir_path.glob("*.csv"))
+        if len(csv_files) >= 2:
+            monthly_stats: list[tuple[str, object]] = []
+            for csv_file in csv_files:
+                month_dataset = load_historical_bars_csv(csv_file)
+                month_sim = BacktestSimulator(
+                    strategy_name=config.strategy_name,
+                    symbol=config.symbol,
+                    timeframe=config.timeframe,
+                    pip_size=config.pip_size,
+                    sl_pips=config.sl_pips,
+                    tp_pips=config.tp_pips,
+                    intrabar_fill_policy=config.intrabar_fill_policy,
+                )
+                month_result = month_sim.run(dataset=month_dataset)
+                monthly_stats.append((csv_file.stem, month_result.stats))
+
+            agg_stats = aggregate_monthly_stats(monthly_stats)
+
+            cross_month_eval = evaluate_cross_month(
+                agg=agg_stats,
+                thresholds=config.cross_month_thresholds,
+            )
+            integrated_eval = evaluate_integrated(
+                agg=agg_stats,
+                thresholds=config.integrated_thresholds,
+            )
+            final_verdict = integrated_eval.verdict.value
+            logger.info(
+                "Cross-month evaluation: verdict=%s, Integrated: verdict=%s",
+                cross_month_eval.verdict.value,
+                integrated_eval.verdict.value,
+            )
+
     return ExplorationResult(
         strategy_name=config.strategy_name,
         strategy_file=str(strategy_file),
         evaluation=evaluation,
-        verdict=evaluation.verdict.value,
+        verdict=final_verdict,
+        cross_month_evaluation=cross_month_eval,
+        integrated_evaluation=integrated_eval,
+        aggregate_stats=agg_stats,
     )
 
 
@@ -128,6 +193,9 @@ class LoopConfig:
     max_param_variations: int = 3
     cleanup_discarded: bool = False
     random_seed: int = 42
+    csv_dir: str | None = None
+    cross_month_thresholds: CrossMonthThresholds | None = None
+    integrated_thresholds: IntegratedThresholds | None = None
 
 
 @dataclass
@@ -216,6 +284,9 @@ def run_exploration_loop(config: LoopConfig) -> LoopResult:
             intrabar_fill_policy=config.intrabar_fill_policy,
             strategy_params=current_params,
             thresholds=config.thresholds,
+            csv_dir=config.csv_dir,
+            cross_month_thresholds=config.cross_month_thresholds,
+            integrated_thresholds=config.integrated_thresholds,
         )
 
         logger.info(
@@ -298,5 +369,392 @@ def run_exploration_loop(config: LoopConfig) -> LoopResult:
     loop_result.stopped_reason = "max_iterations"
     logger.info(
         "Loop stopped: max_iterations (%d) reached", config.max_iterations
+    )
+    return loop_result
+
+
+# ---------------------------------------------------------------------------
+# Bollinger override exploration
+# ---------------------------------------------------------------------------
+
+# Parameter variation ranges for bollinger strategies.
+# Each entry maps a qualified key (module_path::CONST_NAME) to (min, max, step).
+BOLLINGER_PARAM_VARIATION_RANGES: dict[str, dict[str, tuple[float, float, float]]] = {
+    "bollinger_range_v4_4": {
+        "mt4_bridge.strategies.bollinger_range_v4_4::BOLLINGER_PERIOD": (10, 40, 5),
+        "mt4_bridge.strategies.bollinger_range_v4_4::BOLLINGER_SIGMA": (1.5, 3.0, 0.25),
+        "mt4_bridge.strategies.bollinger_range_v4_4::RANGE_SLOPE_THRESHOLD": (0.0002, 0.001, 0.0001),
+        "mt4_bridge.strategies.bollinger_range_v4_4::RANGE_BAND_WIDTH_THRESHOLD": (0.001, 0.006, 0.0005),
+        "mt4_bridge.strategies.bollinger_range_v4_4::RANGE_MIDDLE_DISTANCE_THRESHOLD": (0.001, 0.004, 0.0005),
+    },
+    "bollinger_trend_B": {
+        "mt4_bridge.strategies.bollinger_trend_B::TREND_SLOPE_THRESHOLD": (0.00001, 0.0001, 0.00001),
+        "mt4_bridge.strategies.bollinger_trend_B::STRONG_TREND_SLOPE_THRESHOLD": (0.0002, 0.001, 0.0001),
+    },
+    "bollinger_combo_AB": {
+        "mt4_bridge.strategies.bollinger_range_v4_4::BOLLINGER_PERIOD": (10, 40, 5),
+        "mt4_bridge.strategies.bollinger_range_v4_4::BOLLINGER_SIGMA": (1.5, 3.0, 0.25),
+        "mt4_bridge.strategies.bollinger_range_v4_4::RANGE_SLOPE_THRESHOLD": (0.0002, 0.001, 0.0001),
+        "mt4_bridge.strategies.bollinger_range_v4_4::RANGE_BAND_WIDTH_THRESHOLD": (0.001, 0.006, 0.0005),
+        "mt4_bridge.strategies.bollinger_range_v4_4::RANGE_MIDDLE_DISTANCE_THRESHOLD": (0.001, 0.004, 0.0005),
+        "mt4_bridge.strategies.bollinger_trend_B::TREND_SLOPE_THRESHOLD": (0.00001, 0.0001, 0.00001),
+        "mt4_bridge.strategies.bollinger_trend_B::STRONG_TREND_SLOPE_THRESHOLD": (0.0002, 0.001, 0.0001),
+    },
+}
+
+
+@dataclass(frozen=True)
+class BollingerExplorationConfig:
+    """Configuration for a bollinger override exploration cycle."""
+
+    strategy_name: str
+    csv_path: str
+    symbol: str = "BACKTEST"
+    timeframe: str = "M5"
+    pip_size: float = 0.01
+    sl_pips: float = 10.0
+    tp_pips: float = 10.0
+    intrabar_fill_policy: IntrabarFillPolicy = IntrabarFillPolicy.CONSERVATIVE
+    param_overrides: dict[str, float] | None = None
+    thresholds: EvaluationThresholds | None = None
+    csv_dir: str | None = None
+    cross_month_thresholds: CrossMonthThresholds | None = None
+    integrated_thresholds: IntegratedThresholds | None = None
+
+
+@dataclass(frozen=True)
+class BollingerExplorationResult:
+    """Result of a single bollinger override exploration cycle."""
+
+    strategy_name: str
+    param_overrides: dict[str, float]
+    evaluation: EvaluationResult
+    verdict: str
+    cross_month_evaluation: CrossMonthEvaluationResult | None = None
+    integrated_evaluation: IntegratedEvaluationResult | None = None
+    aggregate_stats: AggregateStats | None = None
+
+
+def run_bollinger_exploration(
+    config: BollingerExplorationConfig,
+) -> BollingerExplorationResult:
+    """Execute one bollinger exploration cycle: override params → backtest → evaluate.
+
+    Uses ``apply_strategy_overrides`` to temporarily patch module-level
+    constants in the target strategy modules, then runs a standard backtest
+    and evaluation cycle.  No strategy files are generated or modified.
+
+    Args:
+        config: Configuration for this bollinger exploration cycle.
+
+    Returns:
+        BollingerExplorationResult containing the verdict and evaluation details.
+    """
+    overrides = config.param_overrides or {}
+    specs = get_param_specs(config.strategy_name)
+
+    with apply_strategy_overrides(overrides, specs):
+        # 1. Load historical data
+        dataset = load_historical_bars_csv(Path(config.csv_path))
+
+        # 2. Run backtest
+        simulator = BacktestSimulator(
+            strategy_name=config.strategy_name,
+            symbol=config.symbol,
+            timeframe=config.timeframe,
+            pip_size=config.pip_size,
+            sl_pips=config.sl_pips,
+            tp_pips=config.tp_pips,
+            intrabar_fill_policy=config.intrabar_fill_policy,
+        )
+        backtest_result = simulator.run(dataset=dataset)
+
+        # 3. Evaluate single-month
+        evaluation = evaluate_backtest(
+            stats=backtest_result.stats,
+            thresholds=config.thresholds,
+        )
+
+        # 4. Cross-month & integrated evaluation
+        cross_month_eval: CrossMonthEvaluationResult | None = None
+        integrated_eval: IntegratedEvaluationResult | None = None
+        agg_stats: AggregateStats | None = None
+        final_verdict = evaluation.verdict.value
+
+        if config.csv_dir is not None:
+            csv_dir_path = Path(config.csv_dir)
+            csv_files = sorted(csv_dir_path.glob("*.csv"))
+            if len(csv_files) >= 2:
+                monthly_stats: list[tuple[str, object]] = []
+                for csv_file in csv_files:
+                    month_dataset = load_historical_bars_csv(csv_file)
+                    month_sim = BacktestSimulator(
+                        strategy_name=config.strategy_name,
+                        symbol=config.symbol,
+                        timeframe=config.timeframe,
+                        pip_size=config.pip_size,
+                        sl_pips=config.sl_pips,
+                        tp_pips=config.tp_pips,
+                        intrabar_fill_policy=config.intrabar_fill_policy,
+                    )
+                    month_result = month_sim.run(dataset=month_dataset)
+                    monthly_stats.append((csv_file.stem, month_result.stats))
+
+                agg_stats = aggregate_monthly_stats(monthly_stats)
+
+                cross_month_eval = evaluate_cross_month(
+                    agg=agg_stats,
+                    thresholds=config.cross_month_thresholds,
+                )
+                integrated_eval = evaluate_integrated(
+                    agg=agg_stats,
+                    thresholds=config.integrated_thresholds,
+                )
+                final_verdict = integrated_eval.verdict.value
+                logger.info(
+                    "Bollinger cross-month: verdict=%s, Integrated: verdict=%s",
+                    cross_month_eval.verdict.value,
+                    integrated_eval.verdict.value,
+                )
+
+    return BollingerExplorationResult(
+        strategy_name=config.strategy_name,
+        param_overrides=overrides,
+        evaluation=evaluation,
+        verdict=final_verdict,
+        cross_month_evaluation=cross_month_eval,
+        integrated_evaluation=integrated_eval,
+        aggregate_stats=agg_stats,
+    )
+
+
+def generate_bollinger_param_variations(
+    strategy_name: str,
+    base_overrides: dict[str, float] | None = None,
+    count: int = 3,
+) -> list[dict[str, float]]:
+    """Generate parameter variations for a bollinger strategy.
+
+    Uses ``BOLLINGER_PARAM_VARIATION_RANGES`` to produce up to *count*
+    parameter override dicts that differ from *base_overrides*.
+
+    Args:
+        strategy_name: Bollinger strategy name (key in
+            ``BOLLINGER_PARAM_VARIATION_RANGES``).
+        base_overrides: Current override values.  Keys are qualified
+            ``module_path::CONST_NAME`` strings.
+        count: Maximum number of variations to generate.
+
+    Returns:
+        A list of override dicts, each different from *base_overrides*.
+    """
+    ranges = BOLLINGER_PARAM_VARIATION_RANGES.get(strategy_name)
+    if not ranges:
+        logger.warning(
+            "No bollinger param variation ranges for strategy '%s'",
+            strategy_name,
+        )
+        return []
+
+    effective_base = dict(base_overrides or {})
+    variations: list[dict[str, float]] = []
+    seen: set[tuple[tuple[str, float], ...]] = set()
+    base_key = tuple(sorted((k, float(v)) for k, v in effective_base.items()))
+    seen.add(base_key)
+
+    attempts = 0
+    max_attempts = count * 10
+
+    while len(variations) < count and attempts < max_attempts:
+        attempts += 1
+        candidate: dict[str, float] = {}
+        for param_key, (lo, hi, step) in ranges.items():
+            # Build list of possible values
+            n_steps = int(round((hi - lo) / step)) + 1
+            possible = [round(lo + i * step, 10) for i in range(n_steps)]
+            candidate[param_key] = random.choice(possible)
+
+        key = tuple(sorted((k, float(v)) for k, v in candidate.items()))
+        if key in seen:
+            continue
+        seen.add(key)
+        variations.append(candidate)
+
+    return variations
+
+
+@dataclass(frozen=True)
+class BollingerLoopConfig:
+    """Configuration for the bollinger exploration loop."""
+
+    strategy_name: str
+    csv_path: str
+    symbol: str = "BACKTEST"
+    timeframe: str = "M5"
+    pip_size: float = 0.01
+    sl_pips: float = 10.0
+    tp_pips: float = 10.0
+    intrabar_fill_policy: IntrabarFillPolicy = IntrabarFillPolicy.CONSERVATIVE
+    param_overrides: dict[str, float] | None = None
+    thresholds: EvaluationThresholds | None = None
+    max_iterations: int = 10
+    max_improve_retries: int = 1
+    max_param_variations: int = 3
+    random_seed: int = 42
+    csv_dir: str | None = None
+    cross_month_thresholds: CrossMonthThresholds | None = None
+    integrated_thresholds: IntegratedThresholds | None = None
+
+
+@dataclass
+class BollingerLoopResult:
+    """Aggregated result of a full bollinger exploration loop run."""
+
+    iterations: int = 0
+    results: list[BollingerExplorationResult] = field(default_factory=list)
+    adopted: BollingerExplorationResult | None = None
+    stopped_reason: str = ""
+
+
+def run_bollinger_exploration_loop(
+    config: BollingerLoopConfig,
+) -> BollingerLoopResult:
+    """Run the bollinger exploration loop until adopt or max_iterations.
+
+    This loop uses parameter overrides on existing strategy modules instead
+    of generating new strategy files.  The cycle structure mirrors
+    ``run_exploration_loop``: override → backtest → evaluate → verdict.
+
+    Verdict handling:
+    - **adopt**: stop the loop and record the adopted parameters.
+    - **discard**: reset to base overrides and try new random variations.
+    - **improve**: generate parameter variations from the current overrides
+      and retry up to ``max_improve_retries`` times.
+
+    Args:
+        config: Loop configuration including safety limits.
+
+    Returns:
+        BollingerLoopResult with all iteration details.
+    """
+    random.seed(config.random_seed)
+    logger.info(
+        "Bollinger loop start: strategy=%s, seed=%d",
+        config.strategy_name,
+        config.random_seed,
+    )
+
+    loop_result = BollingerLoopResult()
+    improve_retries = 0
+    param_variations: list[dict[str, float]] = []
+    current_overrides = dict(config.param_overrides or {})
+
+    for iteration in range(1, config.max_iterations + 1):
+        exploration_config = BollingerExplorationConfig(
+            strategy_name=config.strategy_name,
+            csv_path=config.csv_path,
+            symbol=config.symbol,
+            timeframe=config.timeframe,
+            pip_size=config.pip_size,
+            sl_pips=config.sl_pips,
+            tp_pips=config.tp_pips,
+            intrabar_fill_policy=config.intrabar_fill_policy,
+            param_overrides=current_overrides if current_overrides else None,
+            thresholds=config.thresholds,
+            csv_dir=config.csv_dir,
+            cross_month_thresholds=config.cross_month_thresholds,
+            integrated_thresholds=config.integrated_thresholds,
+        )
+
+        logger.info(
+            "Bollinger iteration %d/%d: strategy=%s overrides=%s",
+            iteration,
+            config.max_iterations,
+            config.strategy_name,
+            current_overrides,
+        )
+
+        try:
+            result = run_bollinger_exploration(exploration_config)
+        except Exception:
+            logger.exception(
+                "Bollinger iteration %d failed, skipping",
+                iteration,
+            )
+            loop_result.iterations = iteration
+            continue
+
+        loop_result.results.append(result)
+        loop_result.iterations = iteration
+
+        verdict = result.verdict
+
+        if verdict == "adopt":
+            loop_result.adopted = result
+            loop_result.stopped_reason = "adopt"
+            logger.info(
+                "Bollinger parameters adopted: %s", current_overrides
+            )
+            return loop_result
+
+        if verdict == "discard":
+            logger.info("Bollinger parameters discarded: %s", current_overrides)
+            improve_retries = 0
+            param_variations = []
+            # Generate fresh random overrides for next iteration
+            fresh = generate_bollinger_param_variations(
+                strategy_name=config.strategy_name,
+                base_overrides=config.param_overrides,
+                count=1,
+            )
+            current_overrides = fresh[0] if fresh else dict(config.param_overrides or {})
+            continue
+
+        if verdict == "improve":
+            improve_retries += 1
+            if improve_retries == 1:
+                try:
+                    param_variations = generate_bollinger_param_variations(
+                        strategy_name=config.strategy_name,
+                        base_overrides=current_overrides,
+                        count=config.max_param_variations,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Bollinger param variation generation failed, "
+                        "falling back to next set"
+                    )
+                    param_variations = []
+
+            if (
+                improve_retries <= config.max_improve_retries
+                and param_variations
+            ):
+                current_overrides = param_variations.pop(0)
+                logger.info(
+                    "Bollinger improve retry %d/%d with overrides: %s",
+                    improve_retries,
+                    config.max_improve_retries,
+                    current_overrides,
+                )
+            else:
+                logger.info(
+                    "Max bollinger improve retries reached or no variations, "
+                    "moving to next parameter set"
+                )
+                improve_retries = 0
+                param_variations = []
+                fresh = generate_bollinger_param_variations(
+                    strategy_name=config.strategy_name,
+                    base_overrides=config.param_overrides,
+                    count=1,
+                )
+                current_overrides = fresh[0] if fresh else dict(config.param_overrides or {})
+            continue
+
+    loop_result.stopped_reason = "max_iterations"
+    logger.info(
+        "Bollinger loop stopped: max_iterations (%d) reached",
+        config.max_iterations,
     )
     return loop_result
