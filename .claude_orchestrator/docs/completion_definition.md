@@ -70,9 +70,13 @@
 ## 6. 品質
 
 - 月平均で150〜200 pips程度の利益が出る構成を探索・確認できる
+  <!-- status: partial — evaluate_cross_month() / evaluate_integrated() で月平均 pips 基準の判定ロジックは実装済み（evaluator.py）。ただし探索ループ（exploration_loop.py）との接続は未実装 -->
 - 全月合算でプラスであり、赤字月が連続せず、月別成績のばらつきが極端でない
+  <!-- status: implemented — evaluate_integrated() で total_pips>0・赤字月比率・連続赤字月・月別 stddev を統合判定（evaluator.py）。aggregate_stats.py で deficit_month_count / max_consecutive_deficit_months / monthly_pips_stddev を算出済み -->
 - 単月だけ強い戦術は採択せず、全月合算成績と月別安定性の両方を採択条件に含める
+  <!-- status: implemented — evaluate_integrated() が全月合算成績（総pips・PF・最大DD）と月別安定性（赤字月比率・連続赤字月・stddev）の両方を採択条件として ADOPT/IMPROVE/DISCARD を返す（evaluator.py） -->
 - 戦術の複雑化よりも説明可能性を優先する
+  <!-- status: 設計方針として維持。戦術は bollinger_range / bollinger_trend 系の説明可能な指標ベース構成 -->
 
 > セクション判定: セクション2（主目的）・セクション6（設計方針）
 
