@@ -605,6 +605,134 @@ feature_inventory.md「全月安定性評価」エントリへのスコープ外
 - HTML コメント形式の注釈は Markdown レンダラで非表示のため、ソースを直接閲覧しない利用者には情報が伝わらない（機能上は問題なし、将来的に可視形式への変更を検討）
 - feature_inventory「全月安定性評価」エントリの status: partial が実装状態（implemented 相当）と不整合のまま残存（本タスクスコープ外）
 
+## TASK-0034 : feature_inventory「全月安定性評価（赤字月非連続・ばらつき抑制）」status: partial→implemented 更新
+
+- 実行日時: 2026-04-09 18:09
+- task_type: docs
+- risk_level: low
+
+### 変更内容
+feature_inventory.md の「全月安定性評価（赤字月非連続・ばらつき抑制）」エントリを partial→implemented に更新し、related_files に evaluator.py を追加、task_split...
+
+### 関連ファイル
+- .claude_orchestrator/docs/feature_inventory.md
+
+### 注意点
+- feature_inventory.md のワーキングツリー差分に TASK-0034 スコープ外の変更（月平均利益基準エントリ）が混在しており、コミット時にスコープ外変更が混入しないよう注意が必要
+
+## TASK-0035 : feature_inventory「月平均利益基準の探索・確認」エントリ未コミット差分の正式反映
+
+- 実行日時: 2026-04-09 18:14
+- task_type: docs
+- risk_level: low
+
+### 変更内容
+feature_inventory.md「月平均利益基準の探索・確認」エントリの未コミット差分を検証し、実装事実との整合を確認。ワーキングツリー上の変更内容（status: not_implemented→partial、TASK-0031...
+
+### 関連ファイル
+- none
+
+### 注意点
+- feature_inventory.md に「全月安定性評価」エントリの未コミット差分（TASK-0034 承認済み）が混在しており、git add 時に一括ステージングするとスコープ外変更が混入する
+
+## TASK-0036 : TASK-0034/0035 検証済み docs 未コミット差分の一括コミット
+
+- 実行日時: 2026-04-09 18:19
+- task_type: docs
+- risk_level: low
+
+### 変更内容
+TASK-0034/0035 検証済み docs 差分4ファイルを一括コミット完了。evaluator.py・all_months_tab.py はスコープ外として除外。
+
+### 関連ファイル
+- .claude_orchestrator/docs/feature_inventory.md
+- .claude_orchestrator/docs/completion_definition.md
+- .claude_orchestrator/docs/task_history/過去TASK作業記録.md
+- .claude_orchestrator/docs/task_history/archive/task_history_archive.md
+
+### 注意点
+- src/backtest/evaluator.py・src/backtest_gui_app/views/all_months_tab.py の未コミット実装差分がワーキングツリーに残存しており、後続タスクでの誤混入リスクが継続
+
+## TASK-0037 : evaluator.py・all_months_tab.py 未コミット実装差分のコミット整理（TASK-0031/0032 由来）
+
+- 実行日時: 2026-04-09 18:24
+- task_type: chore
+- risk_level: low
+
+### 変更内容
+evaluator.py (+274行) と all_months_tab.py (+13行) の TASK-0031/0032 由来実装差分を git diff で検証し、対象2ファイルのみをコミットした。
+
+### 関連ファイル
+- src/backtest/evaluator.py
+- src/backtest_gui_app/views/all_months_tab.py
+
+### 注意点
+- feature_inventory.md の関連エントリ status が実装コミット済み状態と乖離したまま（後続タスクで対応予定）
+
+## TASK-0038 : task_history 未コミット docs 差分の整理コミット
+
+- 実行日時: 2026-04-09 18:29
+- task_type: chore
+- risk_level: low
+
+### 変更内容
+対象2ファイルの未コミット差分を git diff で精査し、正当な TASK 作業記録であることを確認の上コミット完了。ワーキングツリーはクリーン状態。
+
+### 関連ファイル
+- .claude_orchestrator/docs/task_history/archive/task_history_archive.md
+- .claude_orchestrator/docs/task_history/過去TASK作業記録.md
+
+### 注意点
+- feature_inventory.md の関連エントリ status が実装コミット済み状態と乖離したまま（TASK-0037 carry_over 継続、本タスクスコープ外）
+
+## TASK-0039 : feature_inventory.md の TASK-0031/0032 実装反映に伴う status 乖離精査・更新
+
+- 実行日時: 2026-04-09 18:43
+- task_type: docs
+- risk_level: low
+
+### 変更内容
+feature_inventory.md の TASK-0031/0032 関連エントリ2件を実コード・git履歴と突合した結果、両エントリとも status が既に正確な状態であり変更不要と判定。
+
+### 関連ファイル
+- none
+
+### 注意点
+- TASK-0037 carry_over と本タスク判断の齟齬が planner に混乱を与える可能性がある。後続タスクで carry_over 記述を参照する際は本タスクの判断を優先すべき
+
+## TASK-0040 : exploration_loop.py と evaluate_cross_month/evaluate_integrated の接続実装
+
+- 実行日時: 2026-04-09 18:54
+- task_type: feature
+- risk_level: medium
+
+### 変更内容
+exploration_loop.py に csv_dir 指定時の全月横断評価（evaluate_cross_month / evaluate_integrated）接続を実装。ExplorationResult に3フィールド追加、既存...
+
+### 関連ファイル
+- src/backtest/exploration_loop.py
+- .claude_orchestrator/docs/feature_inventory.md
+
+### 注意点
+- 全月バックテストが探索ループの各イテレーションで実行されるため、CSV数 × イテレーション数の計算コストが発生する。実運用時に実行時間の確認が必要
+- csv_dir 内の .csv glob で非バックテスト用 CSV が混入する可能性がある。現状の data ディレクトリ構成では問題ないが留意事項
+
+## TASK-0041 : 既存ボリンジャー戦略を対象とした最適化方針の明文化
+
+- 実行日時: 2026-04-09 22:39
+- task_type: docs
+- risk_level: low
+
+### 変更内容
+ボリンジャー戦略を最適化主対象とする方針を project_core/最適化方針_bollinger戦略.md として新規作成し、feature_inventory.md の関連2エントリに方針参照ノートを追加した。
+
+### 関連ファイル
+- .claude_orchestrator/docs/project_core/最適化方針_bollinger戦略.md
+- .claude_orchestrator/docs/feature_inventory.md
+
+### 注意点
+- 方針文書は方針のみであり、exploration_loop の bollinger 系対応実装が未着手のため、方針と実装の乖離が後続タスクまで続く
+
 
 
 

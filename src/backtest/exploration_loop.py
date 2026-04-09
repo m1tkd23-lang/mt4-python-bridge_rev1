@@ -28,7 +28,7 @@ from backtest.evaluator import (
     EvaluationThresholds,
     IntegratedEvaluationResult,
     IntegratedThresholds,
-    evaluate_backtest,
+    evaluate_backtest_with_log_guard,
     evaluate_cross_month,
     evaluate_integrated,
 )
@@ -109,9 +109,9 @@ def run_single_exploration(config: ExplorationConfig) -> ExplorationResult:
     )
     backtest_result = simulator.run(dataset=dataset)
 
-    # 4. Evaluate single-month
-    evaluation = evaluate_backtest(
-        stats=backtest_result.stats,
+    # 4. Evaluate single-month (with log quality guard)
+    evaluation = evaluate_backtest_with_log_guard(
+        result=backtest_result,
         thresholds=config.thresholds,
     )
 
@@ -469,9 +469,9 @@ def run_bollinger_exploration(
         )
         backtest_result = simulator.run(dataset=dataset)
 
-        # 3. Evaluate single-month
-        evaluation = evaluate_backtest(
-            stats=backtest_result.stats,
+        # 3. Evaluate single-month (with log quality guard)
+        evaluation = evaluate_backtest_with_log_guard(
+            result=backtest_result,
             thresholds=config.thresholds,
         )
 

@@ -20,8 +20,8 @@ class SimulatedPosition:
     ticket: int
     sl_price: float | None
     tp_price: float | None
+    trade_id: str
     entry_bar_index: int = 0
-    trade_id: str | None = None
 
     entry_signal_reason: str | None = None
     entry_market_state: str | None = None
@@ -78,7 +78,7 @@ class ExecutedTrade:
     exit_price: float
     pips: float
     exit_reason: str
-    trade_id: str | None = None
+    trade_id: str
 
     entry_signal_reason: str | None = None
     entry_market_state: str | None = None

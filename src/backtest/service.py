@@ -13,7 +13,7 @@ from backtest.simulator.trade_logger import write_trade_log_jsonl
 from backtest.evaluator import (
     EvaluationResult,
     EvaluationThresholds,
-    evaluate_backtest,
+    evaluate_backtest_with_log_guard,
 )
 from backtest.simulator import (
     BacktestResult,
@@ -102,8 +102,8 @@ def run_backtest(
             close_open_position_at_end=config.close_open_position_at_end,
         )
 
-    evaluation = evaluate_backtest(
-        stats=backtest_result.stats,
+    evaluation = evaluate_backtest_with_log_guard(
+        result=backtest_result,
         thresholds=thresholds,
     )
 

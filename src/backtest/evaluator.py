@@ -1,11 +1,14 @@
 # src/backtest/evaluator.py
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from enum import Enum
 
 from backtest.aggregate_stats import AggregateStats
-from backtest.simulator import BacktestStats
+from backtest.simulator import BacktestResult, BacktestStats
+
+logger = logging.getLogger(__name__)
 
 
 class EvaluationVerdict(str, Enum):
@@ -382,3 +385,54 @@ def evaluate_integrated(
         reasons=reasons,
         stats_summary=stats_summary,
     )
+
+
+# --- Log quality gate ---
+
+_LOG_REQUIRED_TRADE_FIELDS = ("trade_id", "lane", "exit_reason")
+
+
+def check_log_quality(result: BacktestResult) -> tuple[bool, list[str]]:
+    """Verify that a BacktestResult can produce valid structured log output.
+
+    Returns (passed, issues). If passed is False, the result should be
+    treated as DISCARD because structured logs cannot be generated.
+    """
+    issues: list[str] = []
+
+    for i, trade in enumerate(result.trades):
+        if not trade.trade_id:
+            issues.append(f"trade[{i}]: missing trade_id")
+        if not trade.lane:
+            issues.append(f"trade[{i}]: missing lane (lane_id)")
+        if not trade.exit_reason:
+            issues.append(f"trade[{i}]: missing exit_reason (reason_code)")
+
+    passed = len(issues) == 0
+    if not passed:
+        logger.warning(
+            "Log quality check failed (%d issues): %s",
+            len(issues),
+            "; ".join(issues[:5]),
+        )
+    return passed, issues
+
+
+def evaluate_backtest_with_log_guard(
+    result: BacktestResult,
+    thresholds: EvaluationThresholds | None = None,
+) -> EvaluationResult:
+    """Wrapper around evaluate_backtest that DISCARDs results lacking structured log output."""
+    passed, issues = check_log_quality(result)
+    if not passed:
+        return EvaluationResult(
+            verdict=EvaluationVerdict.DISCARD,
+            reasons=[f"Structured log output unavailable: {'; '.join(issues[:3])}"],
+            stats_summary={
+                "strategy_name": result.stats.strategy_name,
+                "total_pips": result.stats.total_pips,
+                "trades": result.stats.trades,
+                "log_quality_issues": len(issues),
+            },
+        )
+    return evaluate_backtest(stats=result.stats, thresholds=thresholds)

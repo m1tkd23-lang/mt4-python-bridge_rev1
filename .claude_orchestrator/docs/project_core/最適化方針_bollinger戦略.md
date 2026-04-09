@@ -32,10 +32,39 @@ exploration_loop の最適化対象を明確化し、
 
 1. **A レーン単体の最適化**: bollinger_range 系のパラメータ調整を先行
 2. **B レーン単体の最適化**: bollinger_trend 系のパラメータ調整
-3. **A+B 統合評価**: combo_AB で A/B を組み合わせた全月横断評価
-4. **採択判定**: evaluate_integrated() による ADOPT/IMPROVE/DISCARD 判定
+3. **A/B 組み合わせ評価**: A 最適パラメータ + B 最適パラメータで combo_AB 全月横断評価
+4. **combo_AB 反映**: 採択パラメータを bollinger_combo_AB.py に反映（apply_params.py）
 
 各ステップで全月横断評価（evaluate_cross_month / evaluate_integrated）を使用する。
+
+---
+
+## ボリンジャー専用 exploration_loop 方針
+
+### 基本方針
+
+ボリンジャー戦略の最適化には、既存の exploration_loop を汎用的にそのまま使うのではなく、
+bollinger_range / bollinger_trend / bollinger_combo_AB を対象とした **専用の探索フロー** を用いる。
+
+### 探索方式
+
+* **既存戦略ファイルをそのまま使う**: bollinger_range_v4_4.py / bollinger_trend_B.py 等の既存 `.py` ファイルを探索対象とする
+* **`generate_strategy_file()` は使わない**: strategy_generator.py によるテンプレート生成は bollinger 系戦術の構造に対応しておらず、探索フローで使用しない
+* **`apply_strategy_overrides()` によるランタイム一時上書きで評価する**: strategy_params.py のコンテキストマネージャでモジュール定数を一時的にオーバーライドし、バックテスト完了後に復元する方式を採用する。戦略ファイル自体は変更しない
+
+### 探索フロー（4段階）
+
+1. **A 単体探索**: bollinger_range 系戦術のパラメータバリエーション（BOLLINGER_PARAM_VARIATION_RANGES）を生成し、全月横断バックテスト→ evaluate_integrated() で各パラメータセットを評価。最良パラメータセットを特定する
+2. **B 単体探索**: bollinger_trend 系戦術に対して同様にパラメータバリエーション探索を実施し、最良パラメータセットを特定する
+3. **A/B 組み合わせ探索**: A 最良パラメータ + B 最良パラメータの組み合わせで combo_AB を全月横断評価し、A+B 合成成績と月別安定性を確認する
+4. **combo_AB 反映**: 採択判定（ADOPT）を得たパラメータセットを apply_params.py で bollinger_combo_AB.py に恒久的に書き込む
+
+### 実装上の対応
+
+* `exploration_loop.py` の `run_bollinger_exploration()` / `run_bollinger_exploration_loop()` が上記フローを担う（TASK-0042 実装済み）
+* `generate_bollinger_param_variations()` が BOLLINGER_PARAM_VARIATION_RANGES に基づきパラメータバリエーションを自動生成する
+* csv_dir 指定時に全月バックテスト→ aggregate_monthly_stats → evaluate_cross_month / evaluate_integrated を実行する（TASK-0040 実装済み）
+* 2レーン構成（A/B）を維持し、3レーン以上には拡張しない
 
 ---
 
@@ -79,19 +108,17 @@ exploration_loop の最適化対象を明確化し、
 
 ---
 
-## 現状の課題と次の実装ステップ
+## 実装状況と残課題
 
-### 課題
+### 解決済み
 
-1. `exploration_loop.py` は `strategy_generator.py` の `generate_strategy_file()` に依存しており、bollinger 系戦術を直接最適化対象にできない
-2. bollinger 系戦術は既存の `.py` ファイルとして存在し、テンプレート生成ではなくパラメータオーバーライド方式（`strategy_params.py` の `apply_strategy_overrides`）で調整する設計
-3. exploration_loop と bollinger 系戦術のパラメータオーバーライド方式を接続する実装が必要
+1. ~~`exploration_loop.py` は `strategy_generator.py` の `generate_strategy_file()` に依存しており、bollinger 系戦術を直接最適化対象にできない~~ → TASK-0042 で `run_bollinger_exploration()` / `run_bollinger_exploration_loop()` を実装し、既存戦術 + パラメータオーバーライド方式での探索が可能になった
+2. ~~bollinger 系パラメータの変動範囲定義が未整備~~ → TASK-0042 で `BOLLINGER_PARAM_VARIATION_RANGES` / `generate_bollinger_param_variations()` を実装済み
+3. ~~exploration_loop と全月横断評価の接続が未実装~~ → TASK-0040 で csv_dir 指定時の全月バックテスト→ evaluate_cross_month / evaluate_integrated 接続を実装済み
 
-### 次のステップ（実装タスク候補）
+### 残課題
 
-* exploration_loop が bollinger 系既存戦術を直接バックテスト対象にできるようにする
-  * `generate_strategy_file()` を経由せず、既存戦術名 + パラメータオーバーライドで探索サイクルを回す方式
-* bollinger 系パラメータの変動範囲定義（PARAM_VARIATION_RANGES 相当）を追加する
+* 実データ CSV を用いた結合テスト（TASK-0042 実装後の動作検証）は未実施
 * GUI 経由の探索統合（将来スコープ）
 
 ---

@@ -19,14 +19,14 @@
 - 1レーンにつき常に1ポジションのみ保持可能とし、同一レーン内での複数ポジションを禁止する
 - ポジション状態（未保有 / 保有中 / 決済待ち）を明確に管理できる
 
-<!-- TASK-0053 セクション1 判定状況確認: COMPLETE 判定可能
+<!-- セクション1 完了判定: COMPLETE
   判定日: 2026-04-10
+  判定根拠: 全4項目の対応エントリが feature_inventory 上で implemented であり、partial エントリなし（TASK-0053 判定状況確認で確認済み）
   feature_inventory 突合結果:
   - 月別CSVバックテスト実行: implemented
   - A/B 2レーン戦術適用: implemented
   - ポジション管理（1レーン1ポジション制約）: implemented
-  - SL/TP処理（Intrabar fill）: implemented
-  全4項目の対応エントリが implemented であり、partial エントリなし。COMPLETE 判定可能。 -->
+  - SL/TP処理（Intrabar fill）: implemented -->
 
 > セクション判定: セクション3（MVP中心機能）
 
@@ -39,14 +39,14 @@
 - 月別ばらつきや赤字月数を確認できる
 - A単体、B単体、A+B合成成績を比較できる
 
-<!-- TASK-0053 セクション2 判定状況確認: COMPLETE 判定可能
+<!-- セクション2 完了判定: COMPLETE
   判定日: 2026-04-10
+  判定根拠: 全4項目の対応エントリが feature_inventory 上で implemented であり、partial エントリなし（TASK-0053 判定状況確認で確認済み）
   feature_inventory 突合結果:
   - 成績算出（総pips・勝率・PF・最大DD・取引回数）: implemented
   - 全月合算成績算出: implemented（月別ばらつき stddev・赤字月数は aggregate_stats.py で算出済み）
   - MFE/MAE ratio 補助品質指標: implemented
-  - A単体・B単体・A+B合成成績比較: implemented
-  全4項目の対応エントリが implemented であり、partial エントリなし。COMPLETE 判定可能。 -->
+  - A単体・B単体・A+B合成成績比較: implemented -->
 
 > セクション判定: セクション3（MVP中心機能）
 
@@ -98,13 +98,13 @@
 
 ## 4. ログ・追跡・最終統合機能
 
-<!-- TASK-0053 セクション4 判定状況確認: COMPLETE 判定不可（partial エントリあり）
+<!-- セクション4 完了判定: COMPLETE
   判定日: 2026-04-10
+  判定根拠: TASK-0055 で構造化ログ出力（SKIP イベント reason_code 付き記録）と trade_id 必須化が完了し、全3項目の対応エントリが feature_inventory 上で implemented（TASK-0053 時点の partial 2件が解消済み）
   feature_inventory 突合結果:
-  - 構造化ログ出力（trade_id / lane_id / reason_code）: partial — JSONL 形式のトレードライフサイクルログは実装済みだが、「なぜ見送ったか」の構造化記録等が未完了
-  - trade_id によるトレード追跡: partial — trade_id フィールドは実装済みだが Optional（デフォルト None）のまま
-  - 最終統合（採択結果の bollinger_combo_AB.py 反映）: implemented
-  残課題: 構造化ログ出力・trade_id 追跡が partial。COMPLETE 判定には見送り理由の構造化記録、trade_id 必須化等の対応が必要。 -->
+  - 構造化ログ出力（trade_id / lane_id / reason_code）: implemented — TASK-0055 で SKIP イベント（見送り理由）の構造化記録を追加（reason_code: range_reentry_blocked / entry_event_not_allowed / no_entry_condition / hold_no_entry）
+  - trade_id によるトレード追跡: implemented — TASK-0055 で trade_id を Optional→必須（str）に変更
+  - 最終統合（採択結果の bollinger_combo_AB.py 反映）: implemented -->
 
 - シミュレーターは「なぜエントリーしたか」「なぜ見送ったか」「なぜ決済したか」を追跡できるログを出力する
 - 各トレードは一意な `trade_id` で追跡でき、各レーンは `lane_id`（A / B）で区別できる
@@ -117,13 +117,18 @@
 
 ## 5. 操作性
 
-<!-- TASK-0053 セクション5 判定状況確認: COMPLETE 判定不可（partial エントリあり）
+<!-- セクション5 完了判定: COMPLETE
   判定日: 2026-04-10
+  判定根拠: TASK-0057 で GUI 応答速度の定量検証を実施し、全エントリが implemented に昇格
+  「実用的な速度」基準定義: 単月バックテスト5秒以内、全月一括バックテスト60秒以内
+  計測結果:
+  - 単月バックテスト（bollinger_combo_AB, 12ヶ月個別計測）: 0.4〜2.8秒（平均約2.1秒） → 基準クリア
+  - 全月一括バックテスト（12ヶ月一括）: 約26秒 → 基準クリア
+  - GUI は QThread 非同期実行のため全月一括中も UI 応答を維持
   feature_inventory 突合結果:
-  - GUI 応答速度（実用的な速度での再評価）: partial — 応答速度の定量検証が未実施
+  - GUI 応答速度（実用的な速度での再評価）: implemented（TASK-0057 定量検証済み）
   - Windows ローカル Python 実行: implemented
-  - GUI バックテスト画面: implemented（採択判断の見える化として充足）
-  残課題: GUI 応答速度の検証未実施（単月・全月一括の実行時間計測と「実用的な速度」の基準判定が必要）。 -->
+  - GUI バックテスト画面: implemented（採択判断の見える化として充足） -->
 
 - GUI上でのパラメータ変更に対し、実用的な速度で再評価結果が表示される
 - 複数月一括評価が現実的な時間で完了する
@@ -137,7 +142,7 @@
 ## 6. 品質
 
 - 月平均で150〜200 pips程度の利益が出る構成を探索・確認できる
-  <!-- status: partial — evaluate_cross_month() / evaluate_integrated() で月平均 pips 基準の判定ロジックは実装済み（evaluator.py）。ただし探索ループ（exploration_loop.py）との接続は未実装 -->
+  <!-- status: implemented — evaluate_cross_month() / evaluate_integrated() で月平均 pips 基準の判定ロジックは実装済み（evaluator.py）。探索ループ（exploration_loop.py）との接続は TASK-0040 で完了済み -->
 - 全月合算でプラスであり、赤字月が連続せず、月別成績のばらつきが極端でない
   <!-- status: implemented — evaluate_integrated() で total_pips>0・赤字月比率・連続赤字月・月別 stddev を統合判定（evaluator.py）。aggregate_stats.py で deficit_month_count / max_consecutive_deficit_months / monthly_pips_stddev を算出済み -->
 - 単月だけ強い戦術は採択せず、全月合算成績と月別安定性の両方を採択条件に含める
@@ -145,15 +150,13 @@
 - 戦術の複雑化よりも説明可能性を優先する
   <!-- status: 設計方針として維持。戦術は bollinger_range / bollinger_trend 系の説明可能な指標ベース構成 -->
 
-<!-- TASK-0053 セクション6 判定状況確認: COMPLETE 判定可能
+<!-- セクション6 完了判定: COMPLETE
   判定日: 2026-04-10
+  判定根拠: 全項目の対応エントリが feature_inventory 上で implemented であり、partial エントリなし（TASK-0053 判定状況確認で確認済み）
   feature_inventory 突合結果:
   - 月平均利益基準の探索・確認: implemented（TASK-0040 で探索ループ接続完了）
   - 全月安定性評価（赤字月非連続・ばらつき抑制）: implemented
-  注意: 本セクション内の項目(1)既存注釈に「status: partial — 探索ループとの接続は未実装」とあるが、
-  feature_inventory では TASK-0040 で接続完了し implemented に更新済み。既存注釈は陳腐化している。
-  項目(3)(4) は設計方針として実装に反映済み。
-  全項目の対応エントリが implemented であり、COMPLETE 判定可能。 -->
+  - 項目(3)(4) は設計方針として実装に反映済み -->
 
 > セクション判定: セクション2（主目的）・セクション6（設計方針）
 
@@ -161,14 +164,14 @@
 
 ## 7. エラー処理・耐障害性
 
-<!-- TASK-0053 セクション7 判定状況確認: COMPLETE 判定不可（partial エントリあり）
+<!-- セクション7 完了判定: COMPLETE
   判定日: 2026-04-10
+  判定根拠: TASK-0058 で残課題2件（ログ品質制約）を実装し、全項目の対応エントリが feature_inventory 上で implemented に昇格
   feature_inventory 突合結果:
-  - エラー処理・耐障害性: partial
-  残課題:
-  - 「ログが取れないロジックは採択しない」の仕組みが未実装
-  - 「構造化項目 reason_code 必須」の強制が未実装
-  - リアルタイム側エラー処理は充実しているが、ログ品質制約の実装は不足 -->
+  - エラー処理・耐障害性: implemented（TASK-0058 で partial → implemented に昇格）
+  実装内容:
+  - evaluator.py に check_log_quality() / evaluate_backtest_with_log_guard() を追加: BacktestResult の構造化ログ出力可能性を検証し、ログ不可ロジックを DISCARD 扱い
+  - trade_logger.py に _validate_reason_code() を追加: SKIP/ENTRY/EXIT イベント記録時に reason_code フィールドの存在を検証し、欠落時に ValueError を送出 -->
 
 - 失敗時は処理全体を壊さず、対象ファイル単位で安全に停止・記録する
 - ログが取れないロジックは採択しない
@@ -184,14 +187,19 @@
 - シミュレーター専用の曖昧な簡略判定は避け、実戦側へ移植可能な設計にする
 - 実戦側ログとシミュレーター側ログで `event_type` / `reason_code` / `lane_id` / `trade_id` の概念を一致させる
 
-<!-- TASK-0053 セクション8 判定状況確認: COMPLETE 判定不可（partial エントリあり）
+<!-- セクション8 完了判定: COMPLETE
   判定日: 2026-04-10
+  判定根拠: TASK-0059 で残課題3件を解消し、データ整合性エントリが feature_inventory 上で implemented に昇格
   feature_inventory 突合結果:
-  - データ整合性（シミュレーターと MT4 の挙動一致）: partial
-  残課題:
-  - event_type / reason_code / lane_id / trade_id のログ概念一致が未実装
-  - 「シミュレーター専用の曖昧な簡略判定を避ける」の乖離有無は精査未実施
-  - MT4 側（MQL4）と Python 側の構造的対応は取れているが、ログ意味体系の一致は未達 -->
+  - データ整合性（シミュレーターと MT4 の挙動一致）: implemented
+  実装内容:
+  - log_concept_mapping.py を新設し、event_type / reason_code / lane_id / trade_id のシミュレーター⇔MT4 概念対応表を定義
+  - trade_logger.py がマッピング定数（VALID_EVENT_TYPES / VALID_EXIT_REASON_CODES / VALID_LANE_IDS）を参照し、イベント出力時の概念一致を検証
+  - engine.py の全 mixin（position_manager / intrabar / generic_runner / v7_runner）を精査し、シミュレーター専用の簡略判定がないことを確認:
+    - SL/TP 計算: mt4_bridge.risk_manager.calculate_sl_tp() を共用（シミュレーター独自の簡略計算なし）
+    - エントリー条件判定: 同一戦略関数（range_buy_confirmed 等）を使用（シミュレーター独自のショートカットなし）
+    - ポジション管理: 1レーン1ポジション制約をシミュレーター・MT4 双方で同等に強制
+    - Intrabar SL/TP: IntrabarFillPolicy による同一足 SL+TP 競合解決は設計上の制約であり簡略判定ではない -->
 
 > セクション判定: セクション6（設計方針）
 
