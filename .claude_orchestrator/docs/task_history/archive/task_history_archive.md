@@ -315,6 +315,139 @@ Standard タブの InputPanel に戦術固有パラメータ編集 UI（Strategy
 - STRATEGY_PARAM_MAP はハードコードのため新戦術追加時に strategy_params.py の手動更新が必要
 - GUI 実機動作確認（パラメータ変更→バックテスト再実行→結果即時反映）は手動テスト扱いで未実施
 
+## TASK-0018 : All Months タブでの戦術パラメータオーバーライド対応（スレッドセーフ方式）
+
+- 実行日時: 2026-04-09 09:31
+- task_type: feature
+- risk_level: medium
+
+### 変更内容
+All Months タブの全月一括実行に戦術パラメータオーバーライドを対応させた。run_all_months() に strategy_params 引数を追加し、AllMonthsWorker 経由で InputPanel の GUI...
+
+### 関連ファイル
+- src/backtest/service.py
+- src/backtest_gui_app/views/main_window.py
+- .claude_orchestrator/docs/feature_inventory.md
+
+### 注意点
+- 将来 run_all_months() を並列化（ThreadPoolExecutor 等）した場合、モジュールグローバル setattr 方式ではグローバル競合が発生する。その際はスレッドローカルまたはプロセス分離が必要
+- GUI 実機動作確認（All Months タブでパラメータ変更→全月実行→結果にオーバーライド反映）は手動テスト扱いで未実施
+
+## TASK-0019 : 構造化ログ出力基盤の設計と最小実装（trade_id・lane_id・reason_code）
+
+- 実行日時: 2026-04-09 15:18
+- task_type: feature
+- risk_level: medium
+
+### 変更内容
+構造化ログ出力基盤を実装。ExecutedTrade/SimulatedPosition に trade_id を追加し、JSON Lines 形式でトレードライフサイクル（ENTRY/SL_HIT/TP_HIT/SIGNAL_CLOSE/...
+
+### 関連ファイル
+- src/backtest/simulator/models.py
+- src/backtest/simulator/position_manager.py
+- src/backtest/simulator/trade_logger.py
+- src/backtest/simulator/__init__.py
+- src/backtest/service.py
+- .claude_orchestrator/docs/feature_inventory.md
+
+### 注意点
+- run_all_months() でのログ出力未対応。全月一括実行時は trade_id が月ごとにリセットされ重複するため、月別プレフィックス付与が必要
+- entry の reason_code が簡易形式であり、将来の機械フィルタ用途では粒度不足の可能性
+- MFE/MAE/holding_bars 等の completion_definition フル仕様フィールドが未実装
+- run_all_months() 並列化時の trade_id グローバル一意性問題（carry_over from TASK-0018）
+
+## TASK-0020 : 構造化トレードログの全月一括実行対応（run_all_months への trade_log 出力統合）
+
+- 実行日時: 2026-04-09 15:32
+- task_type: feature
+- risk_level: medium
+
+### 変更内容
+run_all_months() に trade_log_dir 引数を追加し、全月一括実行時に月別 JSONL トレードログを出力可能にした。GUI の All Months タブに Trade Log チェックボックスを追加し AllM...
+
+### 関連ファイル
+- src/backtest/service.py
+- src/backtest_gui_app/views/all_months_tab.py
+- src/backtest_gui_app/views/main_window.py
+- .claude_orchestrator/docs/feature_inventory.md
+
+### 注意点
+- GUI 実機動作確認（All Months タブで Trade Log チェック→全月実行→JSONL 出力）は手動テスト扱いで未実施
+- trade_log_dir は相対パス Path('logs/trade_logs') で構築しており、GUI の CWD が repo root でない場合に意図しない場所に出力される可能性がある
+- 将来 run_all_months() を並列化した場合、モジュールグローバル setattr 方式でグローバル競合が発生する
+
+## TASK-0021 : CLI runner.py への --trade-log-dir オプション追加（全月一括実行時の JSONL 出力対応）
+
+- 実行日時: 2026-04-09 15:43
+- task_type: feature
+- risk_level: low
+
+### 変更内容
+runner.py に --trade-log-dir（全月一括用）と --trade-log-path（単月用）の2つのオプションを追加し、既存の service 層引数に接続した。
+
+### 関連ファイル
+- src/backtest/runner.py
+
+### 注意点
+- carry_over: trade_log_dir に相対パスを指定した場合 CWD 依存で意図しない場所に出力される可能性がある（TASK-0020 から継続）
+- carry_over: 将来 run_all_months() を並列化した場合、モジュールグローバル setattr 方式でグローバル競合が発生する（TASK-0020 から継続）
+- --compare-ab 実行時に trade_log_dir を渡す経路は未実装（次タスクで対応）
+
+## TASK-0022 : --compare-ab モード時の trade_log_dir 接続（各レーンをサブディレクトリに振り分け）
+
+- 実行日時: 2026-04-09 15:53
+- task_type: feature
+- risk_level: low
+
+### 変更内容
+compare_ab() に trade_log_dir パラメータを追加し、各レーン（lane_a / lane_b / combo）をサブディレクトリに振り分けて run_all_months() に渡す接続を実装。CLI 側 _run...
+
+### 関連ファイル
+- src/backtest/service.py
+- src/backtest/runner.py
+
+### 注意点
+- trade_log_dir に相対パスを指定した場合 CWD 依存で意図しない場所に出力される可能性がある（TASK-0020 からの継続課題、本タスクスコープ外）
+
+## TASK-0023 : feature_inventory.md への構造化ログ出力セクション更新（TASK-0021/0022 実装反映）
+
+- 実行日時: 2026-04-09 16:00
+- task_type: docs
+- risk_level: low
+
+### 変更内容
+feature_inventory.md の「構造化ログ出力」セクション task_split_notes に TASK-0021（CLI --trade-log-dir / --trade-log-path）と TASK-0022（com...
+
+### 関連ファイル
+- .claude_orchestrator/docs/feature_inventory.md
+
+### 注意点
+- trade_log_dir 相対パス問題（TASK-0020 からの継続課題）が docs 上で明示されていないが、本タスクスコープ外であり initial_execution_notes に記録済みのため許容
+
+## TASK-0024 : 構造化トレードログへの MFE/MAE/holding_bars フィールド追加
+
+- 実行日時: 2026-04-09 16:11
+- task_type: feature
+- risk_level: low
+
+### 変更内容
+ExecutedTrade に mfe_pips/mae_pips/holding_bars フィールドを追加し、SimulatedPosition でバー処理ループ内の max_favorable_price/max_adverse_pr...
+
+### 関連ファイル
+- src/backtest/simulator/models.py
+- src/backtest/simulator/position_manager.py
+- src/backtest/simulator/generic_runner.py
+- src/backtest/simulator/v7_runner.py
+- src/backtest/simulator/trade_logger.py
+- .claude_orchestrator/docs/feature_inventory.md
+
+### 注意点
+- MFE/MAE は entry bar を含まない（次バーから追跡開始）。MFE=0 ケースの解釈に後続タスクで注意が必要
+- implementer report の risks 記述（entry bar 包含）と実装（entry bar 非包含）に齟齬があるが、実装自体は正しく動作しており本タスクの blocking issue ではない
+
+
+
+
 
 
 
