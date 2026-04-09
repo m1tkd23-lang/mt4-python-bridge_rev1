@@ -10,6 +10,10 @@ from backtest.simulator.models import (
     SimulatedPosition,
     StateSegment,
 )
+from backtest.simulator.trade_logger import (
+    build_trade_lifecycle_events,
+    write_trade_log_jsonl,
+)
 
 __all__ = [
     "BacktestSimulator",
@@ -21,4 +25,6 @@ __all__ = [
     "IntrabarFillPolicy",
     "SimulatedPosition",
     "StateSegment",
+    "build_trade_lifecycle_events",
+    "write_trade_log_jsonl",
 ]

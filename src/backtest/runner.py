@@ -88,6 +88,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run A-lane / B-lane / A+B combo comparison. Requires --csv-dir and --strategy (combo strategy name).",
     )
+    parser.add_argument(
+        "--trade-log-dir",
+        help="Directory to write per-month JSONL trade logs (used with --csv-dir).",
+    )
+    parser.add_argument(
+        "--trade-log-path",
+        help="Path to write JSONL trade log file (used with --csv for single month).",
+    )
     return parser
 
 
@@ -278,6 +286,7 @@ def main() -> int:
 
 
 def _run_single(args) -> int:
+    trade_log_path = Path(args.trade_log_path) if args.trade_log_path else None
     try:
         artifacts = run_backtest(
             BacktestRunConfig(
@@ -292,6 +301,7 @@ def _run_single(args) -> int:
                 close_open_position_at_end=not args.keep_open_position,
                 initial_balance=args.initial_balance,
                 money_per_pip=args.money_per_pip,
+                trade_log_path=trade_log_path,
             )
         )
     except (CsvLoadError, BacktestSimulationError, ValueError) as exc:
@@ -304,6 +314,7 @@ def _run_single(args) -> int:
 
 
 def _run_all_months(args) -> int:
+    trade_log_dir = Path(args.trade_log_dir) if args.trade_log_dir else None
     try:
         result = run_all_months(
             csv_dir=Path(args.csv_dir),
@@ -317,6 +328,7 @@ def _run_all_months(args) -> int:
             close_open_position_at_end=not args.keep_open_position,
             initial_balance=args.initial_balance,
             money_per_pip=args.money_per_pip,
+            trade_log_dir=trade_log_dir,
         )
     except (CsvLoadError, BacktestSimulationError, ValueError) as exc:
         print(f"[ERROR] {exc}")
@@ -332,6 +344,7 @@ def _run_all_months(args) -> int:
 
 
 def _run_compare_ab(args) -> int:
+    trade_log_dir = Path(args.trade_log_dir) if args.trade_log_dir else None
     try:
         result = compare_ab(
             csv_dir=Path(args.csv_dir),
@@ -345,6 +358,7 @@ def _run_compare_ab(args) -> int:
             close_open_position_at_end=not args.keep_open_position,
             initial_balance=args.initial_balance,
             money_per_pip=args.money_per_pip,
+            trade_log_dir=trade_log_dir,
         )
     except (CsvLoadError, BacktestSimulationError, ValueError) as exc:
         print(f"[ERROR] {exc}")

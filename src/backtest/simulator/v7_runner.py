@@ -70,6 +70,9 @@ class V7RunnerMixin:
                 continue
 
             if simulated_position is not None:
+                simulated_position = self._update_position_excursion(
+                    simulated_position, current_row.high, current_row.low,
+                )
                 intrabar_trade = self._check_intrabar_exit(
                     simulated_position=simulated_position,
                     current_row=current_row,

@@ -61,6 +61,7 @@ class AllMonthsWorker(QThread):
         initial_balance: float,
         money_per_pip: float,
         strategy_params: dict[str, float] | None = None,
+        trade_log_dir: Path | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -76,6 +77,7 @@ class AllMonthsWorker(QThread):
         self._initial_balance = initial_balance
         self._money_per_pip = money_per_pip
         self._strategy_params = strategy_params
+        self._trade_log_dir = trade_log_dir
 
     def _progress_with_cancel_check(self, completed: int, total: int) -> None:
         if self.isInterruptionRequested():
@@ -98,6 +100,7 @@ class AllMonthsWorker(QThread):
                 money_per_pip=self._money_per_pip,
                 progress_callback=self._progress_with_cancel_check,
                 strategy_params=self._strategy_params,
+                trade_log_dir=self._trade_log_dir,
             )
             self.finished_ok.emit(result)
         except _AllMonthsCancelled:
@@ -389,6 +392,10 @@ class BacktestMainWindow(QMainWindow):
 
         strategy_params = self.input_panel.get_strategy_param_overrides() or None
 
+        trade_log_dir: Path | None = None
+        if self.all_months_tab.trade_log_checkbox.isChecked():
+            trade_log_dir = Path("logs/trade_logs")
+
         self._all_months_worker = AllMonthsWorker(
             csv_dir=csv_dir,
             strategy_name=strategy_name,
@@ -402,6 +409,7 @@ class BacktestMainWindow(QMainWindow):
             initial_balance=initial_balance,
             money_per_pip=money_per_pip,
             strategy_params=strategy_params,
+            trade_log_dir=trade_log_dir,
             parent=self,
         )
         self._all_months_worker.progress.connect(self._on_all_months_progress)

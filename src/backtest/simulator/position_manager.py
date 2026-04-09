@@ -77,6 +77,8 @@ class PositionManagerMixin:
         debug_metrics = decision.debug_metrics
         position_type = "buy" if decision.action == SignalAction.BUY else "sell"
 
+        trade_id = f"T-{next_ticket:04d}"
+
         position = SimulatedPosition(
             lane=decision.entry_lane or "legacy",
             entry_subtype=decision.entry_subtype,
@@ -86,6 +88,7 @@ class PositionManagerMixin:
             ticket=next_ticket,
             sl_price=sl_price,
             tp_price=tp_price,
+            trade_id=trade_id,
             entry_signal_reason=decision.reason,
             entry_market_state=decision.market_state,
             entry_middle_band=decision.middle_band,
@@ -275,6 +278,10 @@ class PositionManagerMixin:
                 f"Unsupported simulated position type: {simulated_position.position_type}"
             )
 
+        mfe_pips = self._compute_mfe_pips(simulated_position)
+        mae_pips = self._compute_mae_pips(simulated_position)
+        holding_bars = simulated_position.entry_bar_index
+
         return ExecutedTrade(
             lane=simulated_position.lane,
             entry_subtype=simulated_position.entry_subtype,
@@ -285,6 +292,7 @@ class PositionManagerMixin:
             exit_price=exit_price,
             pips=pips,
             exit_reason=exit_reason,
+            trade_id=simulated_position.trade_id,
             entry_signal_reason=simulated_position.entry_signal_reason,
             entry_market_state=simulated_position.entry_market_state,
             entry_middle_band=simulated_position.entry_middle_band,
@@ -376,6 +384,74 @@ class PositionManagerMixin:
             entry_prev_band_width=simulated_position.entry_prev_band_width,
             entry_latest_distance=simulated_position.entry_latest_distance,
             entry_prev_distance=simulated_position.entry_prev_distance,
+            mfe_pips=mfe_pips,
+            mae_pips=mae_pips,
+            holding_bars=holding_bars,
+        )
+
+    def _compute_mfe_pips(
+        self,
+        position: SimulatedPosition,
+    ) -> float | None:
+        if position.max_favorable_price is None:
+            return None
+        if position.position_type == "buy":
+            return (
+                position.max_favorable_price - position.entry_price
+            ) / self._pip_size
+        if position.position_type == "sell":
+            return (
+                position.entry_price - position.max_favorable_price
+            ) / self._pip_size
+        return None
+
+    def _compute_mae_pips(
+        self,
+        position: SimulatedPosition,
+    ) -> float | None:
+        if position.max_adverse_price is None:
+            return None
+        if position.position_type == "buy":
+            return (
+                position.entry_price - position.max_adverse_price
+            ) / self._pip_size
+        if position.position_type == "sell":
+            return (
+                position.max_adverse_price - position.entry_price
+            ) / self._pip_size
+        return None
+
+    @staticmethod
+    def _update_position_excursion(
+        position: SimulatedPosition,
+        bar_high: float,
+        bar_low: float,
+    ) -> SimulatedPosition:
+        if position.position_type == "buy":
+            favorable = bar_high
+            adverse = bar_low
+        elif position.position_type == "sell":
+            favorable = bar_low
+            adverse = bar_high
+        else:
+            return position
+
+        current_fav = position.max_favorable_price
+        current_adv = position.max_adverse_price
+
+        if position.position_type == "buy":
+            new_fav = favorable if current_fav is None else max(current_fav, favorable)
+            new_adv = adverse if current_adv is None else min(current_adv, adverse)
+        else:
+            new_fav = favorable if current_fav is None else min(current_fav, favorable)
+            new_adv = adverse if current_adv is None else max(current_adv, adverse)
+
+        from dataclasses import replace
+
+        return replace(
+            position,
+            max_favorable_price=new_fav,
+            max_adverse_price=new_adv,
         )
 
     def _build_final_open_position_label(

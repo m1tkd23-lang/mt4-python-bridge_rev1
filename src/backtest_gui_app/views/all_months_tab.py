@@ -5,6 +5,7 @@ from datetime import datetime
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFileDialog,
     QGridLayout,
     QGroupBox,
@@ -67,6 +68,10 @@ class AllMonthsTab(QWidget):
 
         self.browse_dir_button = QPushButton("Browse...")
         bar_layout.addWidget(self.browse_dir_button)
+
+        self.trade_log_checkbox = QCheckBox("Trade Log")
+        self.trade_log_checkbox.setToolTip("Output structured trade log (JSONL) for each month")
+        bar_layout.addWidget(self.trade_log_checkbox)
 
         self.run_all_button = QPushButton("Run All Months")
         self.run_all_button.setMinimumHeight(36)

@@ -54,6 +54,9 @@ class GenericRunnerMixin:
                 trend_position = self._advance_position_bar_index(trend_position)
 
                 if range_position is not None:
+                    range_position = self._update_position_excursion(
+                        range_position, current_row.high, current_row.low,
+                    )
                     intrabar_trade = self._check_intrabar_exit(
                         simulated_position=range_position,
                         current_row=current_row,
@@ -67,6 +70,9 @@ class GenericRunnerMixin:
                         range_position = None
 
                 if trend_position is not None:
+                    trend_position = self._update_position_excursion(
+                        trend_position, current_row.high, current_row.low,
+                    )
                     intrabar_trade = self._check_intrabar_exit(
                         simulated_position=trend_position,
                         current_row=current_row,
@@ -78,6 +84,9 @@ class GenericRunnerMixin:
                 legacy_position = self._advance_position_bar_index(legacy_position)
 
                 if legacy_position is not None:
+                    legacy_position = self._update_position_excursion(
+                        legacy_position, current_row.high, current_row.low,
+                    )
                     intrabar_trade = self._check_intrabar_exit(
                         simulated_position=legacy_position,
                         current_row=current_row,

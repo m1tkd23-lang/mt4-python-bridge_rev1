@@ -9,6 +9,7 @@ from pathlib import Path
 
 from backtest.aggregate_stats import AggregateStats, aggregate_monthly_stats
 from backtest.csv_loader import HistoricalBarDataset, load_historical_bars_csv
+from backtest.simulator.trade_logger import write_trade_log_jsonl
 from backtest.evaluator import (
     EvaluationResult,
     EvaluationThresholds,
@@ -47,6 +48,7 @@ class BacktestRunConfig:
     risk_percent: float | None = None
     lot_size: float | None = None
     strategy_params: dict[str, float] | None = None
+    trade_log_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -122,6 +124,13 @@ def run_backtest(
         trade_rows=trade_rows,
     )
 
+    if config.trade_log_path is not None:
+        write_trade_log_jsonl(
+            result=backtest_result,
+            strategy_name=config.strategy_name,
+            output_path=config.trade_log_path,
+        )
+
     return BacktestRunArtifacts(
         config=config,
         dataset=dataset,
@@ -155,6 +164,7 @@ def run_all_months(
     thresholds: EvaluationThresholds | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
     strategy_params: dict[str, float] | None = None,
+    trade_log_dir: Path | None = None,
 ) -> AllMonthsResult:
     csv_files = sorted(csv_dir.glob("*.csv"))
     if not csv_files:
@@ -165,6 +175,9 @@ def run_all_months(
 
     for idx, csv_path in enumerate(csv_files):
         label = csv_path.stem
+        trade_log_path: Path | None = None
+        if trade_log_dir is not None:
+            trade_log_path = trade_log_dir / f"{label}.jsonl"
         config = BacktestRunConfig(
             csv_path=csv_path,
             strategy_name=strategy_name,
@@ -178,6 +191,7 @@ def run_all_months(
             initial_balance=initial_balance,
             money_per_pip=money_per_pip,
             strategy_params=strategy_params,
+            trade_log_path=trade_log_path,
         )
         artifacts = run_backtest(config, thresholds=thresholds)
         monthly_artifacts.append((label, artifacts))
@@ -242,6 +256,7 @@ def compare_ab(
     initial_balance: float = 1_000_000.0,
     money_per_pip: float = 100.0,
     thresholds: EvaluationThresholds | None = None,
+    trade_log_dir: Path | None = None,
 ) -> CompareABResult:
     """Run all-month backtests for A-only, B-only, and A+B combo, returning all three results."""
     lane_a_name, lane_b_name = _resolve_lane_strategies(combo_strategy_name)
@@ -260,9 +275,17 @@ def compare_ab(
         thresholds=thresholds,
     )
 
-    lane_a_result = run_all_months(strategy_name=lane_a_name, **common_kwargs)
-    lane_b_result = run_all_months(strategy_name=lane_b_name, **common_kwargs)
-    combo_result = run_all_months(strategy_name=combo_strategy_name, **common_kwargs)
+    lane_a_log_dir: Path | None = None
+    lane_b_log_dir: Path | None = None
+    combo_log_dir: Path | None = None
+    if trade_log_dir is not None:
+        lane_a_log_dir = trade_log_dir / "lane_a"
+        lane_b_log_dir = trade_log_dir / "lane_b"
+        combo_log_dir = trade_log_dir / "combo"
+
+    lane_a_result = run_all_months(strategy_name=lane_a_name, trade_log_dir=lane_a_log_dir, **common_kwargs)
+    lane_b_result = run_all_months(strategy_name=lane_b_name, trade_log_dir=lane_b_log_dir, **common_kwargs)
+    combo_result = run_all_months(strategy_name=combo_strategy_name, trade_log_dir=combo_log_dir, **common_kwargs)
 
     return CompareABResult(
         lane_a_strategy=lane_a_name,

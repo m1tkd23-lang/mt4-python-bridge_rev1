@@ -21,6 +21,7 @@ class SimulatedPosition:
     sl_price: float | None
     tp_price: float | None
     entry_bar_index: int = 0
+    trade_id: str | None = None
 
     entry_signal_reason: str | None = None
     entry_market_state: str | None = None
@@ -61,6 +62,9 @@ class SimulatedPosition:
     entry_latest_distance: float | None = None
     entry_prev_distance: float | None = None
 
+    max_favorable_price: float | None = None
+    max_adverse_price: float | None = None
+
 
 @dataclass(frozen=True)
 class ExecutedTrade:
@@ -74,6 +78,7 @@ class ExecutedTrade:
     exit_price: float
     pips: float
     exit_reason: str
+    trade_id: str | None = None
 
     entry_signal_reason: str | None = None
     entry_market_state: str | None = None
@@ -137,6 +142,10 @@ class ExecutedTrade:
     entry_latest_distance: float | None = None
     entry_prev_distance: float | None = None
 
+    mfe_pips: float | None = None
+    mae_pips: float | None = None
+    holding_bars: int | None = None
+
 
 @dataclass(frozen=True)
 class StateSegment:
@@ -197,6 +206,7 @@ class BacktestStats:
     gross_profit_pips: float
     gross_loss_pips: float
     final_open_position_type: str | None
+    avg_mfe_mae_ratio: float | None = None
 
 
 @dataclass(frozen=True)

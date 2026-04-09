@@ -41,6 +41,17 @@ class StatsMixin:
             if drawdown > max_drawdown:
                 max_drawdown = drawdown
 
+        mfe_mae_ratios = []
+        for trade in executed_trades:
+            if trade.mfe_pips is not None and trade.mae_pips is not None:
+                if trade.mae_pips != 0:
+                    mfe_mae_ratios.append(trade.mfe_pips / trade.mae_pips)
+        avg_mfe_mae_ratio = (
+            sum(mfe_mae_ratios) / len(mfe_mae_ratios)
+            if mfe_mae_ratios
+            else None
+        )
+
         trades = len(executed_trades)
         win_rate = (wins / trades * 100.0) if trades else 0.0
 
@@ -66,4 +77,5 @@ class StatsMixin:
             gross_profit_pips=gross_profit,
             gross_loss_pips=gross_loss,
             final_open_position_type=final_open_position_type,
+            avg_mfe_mae_ratio=avg_mfe_mae_ratio,
         )

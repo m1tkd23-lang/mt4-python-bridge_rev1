@@ -28,6 +28,7 @@ class AggregateStats:
     deficit_month_count: int
     max_consecutive_deficit_months: int
     monthly_entries: list[MonthlyPipsEntry]
+    avg_mfe_mae_ratio: float | None = None
 
 
 def aggregate_monthly_stats(
@@ -101,6 +102,17 @@ def aggregate_monthly_stats(
         for label, s in monthly_stats
     ]
 
+    monthly_ratios = [
+        s.avg_mfe_mae_ratio
+        for _, s in monthly_stats
+        if s.avg_mfe_mae_ratio is not None
+    ]
+    avg_mfe_mae_ratio = (
+        sum(monthly_ratios) / len(monthly_ratios)
+        if monthly_ratios
+        else None
+    )
+
     return AggregateStats(
         month_count=month_count,
         total_trades=total_trades,
@@ -115,4 +127,5 @@ def aggregate_monthly_stats(
         deficit_month_count=deficit_month_count,
         max_consecutive_deficit_months=max_consecutive_deficit,
         monthly_entries=monthly_entries,
+        avg_mfe_mae_ratio=avg_mfe_mae_ratio,
     )
