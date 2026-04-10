@@ -340,6 +340,91 @@ Only referenced when necessary.
 - 関連: src/backtest/exploration_loop.py, src/explore_gui_app/views/main_window.py
 - 注意: 2回連続探索でのグローバル dict 初期値一致は自動テスト未カバー
 
+## TASK-0071 : 過去TASK作業記録.md の TASK-0045〜0057 アーカイブ移動
+- [chore/low] TASK-0051〜0057 の7エントリを task_history_archive.md へ移動し、過去TASK作業記録.md を圧縮
+- 関連: 過去TASK作業記録.md, archive/task_history_archive.md
+
+
+
+
+
+
+
+
+
+
+
+
+## TASK-0072 : feature_inventory.md 残 partial エントリ棚卸し・completion_definition 整合確認
+- [docs/low] explore_gui.py（partial）の notes に TASK-0069/0070 修正と残課題一覧を追記。GUI バックテスト画面（implemented）の notes 充実化
+- 関連: .claude_orchestrator/docs/feature_inventory.md
+- 注意: explore_gui.py の GUI 実機起動確認が未実施（TASK-0073 で対応）
+
+## TASK-0073 : explore_gui.py の GUI 実機起動確認
+- [bugfix/medium] PySide6 ウィンドウ描画・input_panel・result_panel の表示・ウィジェット構成すべて正常確認。起動不能バグなし
+- 関連: feature_inventory.md
+- 注意: Stop ボタン未機能（isInterruptionRequested 未チェック）、探索フルフロー未検証
+
+
+
+
+
+
+
+
+
+
+
+
+
+## TASK-0074 : exploration_loop の Stop ボタン即時停止対応
+- [bugfix/low] run_exploration_loop・run_bollinger_exploration_loop に thread パラメータ追加、各イテレーション冒頭で isInterruptionRequested チェック実装
+- 関連: src/backtest/exploration_loop.py, src/explore_gui_app/views/main_window.py
+- 注意: 1イテレーション内バックテスト実行中は停止不可（許容範囲）
+
+## TASK-0075 : explore_gui 探索フルフロー動作確認・win_rate 表示バグ修正
+- [bugfix/medium] CSV読み込み→バックテスト→結果表示の一連フロー確認、win_rate 表示フォーマットバグを修正
+- 関連: src/explore_gui_app/views/result_panel.py, src/explore_cli.py
+- 注意: 長時間実行時の UI 無応答可能性（iteration_done emit タイミング問題）
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## TASK-0076 : _ExplorationWorker の iteration_done リアルタイム emit 化
+- [refactor/low] run_bollinger_exploration_loop に on_iteration_done コールバック追加、各イテレーション完了時にリアルタイム emit
+- 関連: src/backtest/exploration_loop.py, src/explore_gui_app/views/main_window.py
+- 注意: コールバック内例外でループ中断の可能性（TASK-0077 で対処）
+
+## TASK-0077 : on_iteration_done コールバック内例外の安全ハンドリング追加
+- [refactor/low] コールバック呼び出しを try/except でラップし、例外時は logger.warning で記録してループ継続
+- 関連: src/backtest/exploration_loop.py
+
+## TASK-0078 : 探索実行中のイテレーション進捗表示追加
+- [feature/low] main_window.py に「Running... Iteration N / M」形式のステータスラベル更新を追加
+- 関連: src/explore_gui_app/views/main_window.py
+- 注意: 例外スキップイテレーションで進捗表示が飛ぶ可能性あり（UX影響軽微）
+
+## TASK-0079 : feature_inventory explore_gui partial → implemented 昇格
+- [docs/low] 初期スコープ6項目の全充足を確認し、feature_inventory.md を partial→implemented に更新。TASK-0073〜0078 の実装内容を notes 反映
+- 関連: .claude_orchestrator/docs/feature_inventory.md
+- 注意: 後続拡張スコープ（B単体探索・A/B組み合わせ探索・apply_params.py連携）が未着手のまま残る可能性
+
+
+
+
+
+
+
 
 
 
