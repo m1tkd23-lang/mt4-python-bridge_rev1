@@ -419,6 +419,14 @@ Only referenced when necessary.
 - 関連: .claude_orchestrator/docs/feature_inventory.md
 - 注意: 後続拡張スコープ（B単体探索・A/B組み合わせ探索・apply_params.py連携）が未着手のまま残る可能性
 
+## TASK-0080 : 過去TASK作業記録.md の要約圧縮（TASK-0060〜TASK-0079 の肥大化対応）
+- [docs/low] 過去TASK作業記録.md の全20エントリ（TASK-0060〜0079）を各3〜4行の要約形式に圧縮し、421行→103行（75%削減）を達成。変更内容要点・関連ファイル・注意点はすべて保持
+- 関連: .claude_orchestrator/docs/task_history/過去TASK作業記録.md
+
+## TASK-0081 : task_history_archive.md（TASK-0001〜TASK-0057）の要約圧縮
+- [docs/low] task_history_archive.md の TASK-0001〜TASK-0059 全59エントリを過去TASK作業記録.md と同一の要約形式に圧縮し、1036行→282行（73%削減）を達成
+- 関連: .claude_orchestrator/docs/task_history/archive/task_history_archive.md
+
 
 
 
