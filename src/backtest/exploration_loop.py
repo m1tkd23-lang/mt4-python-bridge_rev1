@@ -10,9 +10,11 @@ uses existing strategy files with parameter overrides instead of generating new 
 """
 from __future__ import annotations
 
+import copy
 import logging
 import os
 import random
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -51,7 +53,7 @@ class ExplorationConfig:
     timeframe: str = "M5"
     pip_size: float = 0.01
     sl_pips: float = 10.0
-    tp_pips: float = 10.0
+    tp_pips: float = 30.0
     intrabar_fill_policy: IntrabarFillPolicy = IntrabarFillPolicy.CONSERVATIVE
     strategy_params: dict[str, object] | None = None
     thresholds: EvaluationThresholds | None = None
@@ -184,7 +186,7 @@ class LoopConfig:
     timeframe: str = "M5"
     pip_size: float = 0.01
     sl_pips: float = 10.0
-    tp_pips: float = 10.0
+    tp_pips: float = 30.0
     intrabar_fill_policy: IntrabarFillPolicy = IntrabarFillPolicy.CONSERVATIVE
     strategy_params: dict[str, object] | None = None
     thresholds: EvaluationThresholds | None = None
@@ -241,7 +243,7 @@ def _cleanup_strategy_file(file_path: str) -> bool:
         return False
 
 
-def run_exploration_loop(config: LoopConfig) -> LoopResult:
+def run_exploration_loop(config: LoopConfig, thread: object | None = None) -> LoopResult:
     """Run the exploration loop until adopt or max_iterations reached.
 
     Verdict handling:
@@ -268,6 +270,11 @@ def run_exploration_loop(config: LoopConfig) -> LoopResult:
     current_params = config.strategy_params
 
     for iteration in range(1, config.max_iterations + 1):
+        if thread is not None and getattr(thread, "isInterruptionRequested", lambda: False)():
+            loop_result.stopped_reason = "user_stopped"
+            logger.info("Loop stopped: user interruption requested")
+            return loop_result
+
         strategy_name = _make_strategy_name(
             config.base_strategy_name, iteration
         )
@@ -532,6 +539,7 @@ def generate_bollinger_param_variations(
     strategy_name: str,
     base_overrides: dict[str, float] | None = None,
     count: int = 3,
+    ranges_override: dict[str, tuple[float, float, float]] | None = None,
 ) -> list[dict[str, float]]:
     """Generate parameter variations for a bollinger strategy.
 
@@ -544,18 +552,21 @@ def generate_bollinger_param_variations(
         base_overrides: Current override values.  Keys are qualified
             ``module_path::CONST_NAME`` strings.
         count: Maximum number of variations to generate.
+        ranges_override: If provided, used instead of looking up
+            ``BOLLINGER_PARAM_VARIATION_RANGES[strategy_name]``.
 
     Returns:
         A list of override dicts, each different from *base_overrides*.
     """
-    ranges = BOLLINGER_PARAM_VARIATION_RANGES.get(strategy_name)
-    if not ranges:
+    ranges_orig = ranges_override or BOLLINGER_PARAM_VARIATION_RANGES.get(strategy_name)
+    if not ranges_orig:
         logger.warning(
             "No bollinger param variation ranges for strategy '%s'",
             strategy_name,
         )
         return []
 
+    ranges = copy.deepcopy(ranges_orig)
     effective_base = dict(base_overrides or {})
     variations: list[dict[str, float]] = []
     seen: set[tuple[tuple[str, float], ...]] = set()
@@ -604,6 +615,7 @@ class BollingerLoopConfig:
     csv_dir: str | None = None
     cross_month_thresholds: CrossMonthThresholds | None = None
     integrated_thresholds: IntegratedThresholds | None = None
+    param_variation_ranges: dict[str, tuple[float, float, float]] | None = None
 
 
 @dataclass
@@ -618,6 +630,8 @@ class BollingerLoopResult:
 
 def run_bollinger_exploration_loop(
     config: BollingerLoopConfig,
+    thread: object | None = None,
+    on_iteration_done: "Callable[[int, BollingerExplorationResult], None] | None" = None,
 ) -> BollingerLoopResult:
     """Run the bollinger exploration loop until adopt or max_iterations.
 
@@ -650,6 +664,11 @@ def run_bollinger_exploration_loop(
     current_overrides = dict(config.param_overrides or {})
 
     for iteration in range(1, config.max_iterations + 1):
+        if thread is not None and getattr(thread, "isInterruptionRequested", lambda: False)():
+            loop_result.stopped_reason = "user_stopped"
+            logger.info("Bollinger loop stopped: user interruption requested")
+            return loop_result
+
         exploration_config = BollingerExplorationConfig(
             strategy_name=config.strategy_name,
             csv_path=config.csv_path,
@@ -687,6 +706,16 @@ def run_bollinger_exploration_loop(
         loop_result.results.append(result)
         loop_result.iterations = iteration
 
+        if on_iteration_done is not None:
+            try:
+                on_iteration_done(iteration, result)
+            except Exception:
+                logger.warning(
+                    "on_iteration_done callback raised an exception at iteration %d",
+                    iteration,
+                    exc_info=True,
+                )
+
         verdict = result.verdict
 
         if verdict == "adopt":
@@ -706,6 +735,7 @@ def run_bollinger_exploration_loop(
                 strategy_name=config.strategy_name,
                 base_overrides=config.param_overrides,
                 count=1,
+                ranges_override=config.param_variation_ranges,
             )
             current_overrides = fresh[0] if fresh else dict(config.param_overrides or {})
             continue
@@ -718,6 +748,7 @@ def run_bollinger_exploration_loop(
                         strategy_name=config.strategy_name,
                         base_overrides=current_overrides,
                         count=config.max_param_variations,
+                        ranges_override=config.param_variation_ranges,
                     )
                 except Exception:
                     logger.warning(
@@ -748,6 +779,7 @@ def run_bollinger_exploration_loop(
                     strategy_name=config.strategy_name,
                     base_overrides=config.param_overrides,
                     count=1,
+                    ranges_override=config.param_variation_ranges,
                 )
                 current_overrides = fresh[0] if fresh else dict(config.param_overrides or {})
             continue

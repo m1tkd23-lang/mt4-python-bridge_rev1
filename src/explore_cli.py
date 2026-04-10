@@ -192,7 +192,7 @@ def _run_generic_mode(args: argparse.Namespace) -> int:
         print(
             f"  [{i}] {r.strategy_name}  verdict={r.verdict}"
             f"  pf={pf_str}  total_pips={s.get('total_pips', 0):.1f}"
-            f"  win_rate={s.get('win_rate', 0):.1%}"
+            f"  win_rate={s.get('win_rate', 0):.1f}%"
             f"  max_dd={s.get('max_drawdown_pips', 0):.1f}pips"
         )
 
@@ -254,7 +254,7 @@ def _run_bollinger_mode(args: argparse.Namespace) -> int:
         line = (
             f"  [{i}] {r.strategy_name}  verdict={r.verdict}"
             f"  pf={pf_str}  total_pips={s.get('total_pips', 0):.1f}"
-            f"  win_rate={s.get('win_rate', 0):.1%}"
+            f"  win_rate={s.get('win_rate', 0):.1f}%"
             f"  max_dd={s.get('max_drawdown_pips', 0):.1f}pips"
             f"  overrides={r.param_overrides}"
         )

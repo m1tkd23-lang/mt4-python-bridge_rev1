@@ -90,7 +90,12 @@
   帰属先: セクション6（品質）— 探索ループは「月平均150〜200pips の構成を探索・確認できる」に対応する機能であり、CLI ベースで実装済み。
   GUI 統合は将来拡張（セクション9 相当）として扱う。
   これにより feature_inventory「GUI バックテスト画面」エントリの status を partial → implemented に昇格。
-  TASK-0049/0050 carry_over の齟齬は本注釈をもって解決済みとする。 -->
+  TASK-0049/0050 carry_over の齟齬は本注釈をもって解決済みとする。
+
+  [TASK-0065 方針確定] 探索ループの GUI 化は backtest_gui.py へのタブ追加ではなく、
+  explore_gui.py を別エントリポイントとして新規作成する。内部パッケージも explore_gui_app として
+  backtest_gui_app とは分離する。これにより既存 GUI の責務（単発バックテスト・全月集計・A/B比較）を壊さずに
+  探索専用 UI を設計できる。初期スコープは bollinger_range_v4_4 を対象とした A単体探索に限定する。 -->
 
 > セクション判定: セクション3（MVP中心機能）
 
@@ -213,6 +218,17 @@
 - リアルタイム自動売買そのものの開発
 - MT4実行中データを使ったオンライン最適化
 - 外部APIやクラウド学習基盤の導入
+
+### 探索ループ GUI 統合
+- 探索専用GUI（explore_gui.py）の新規作成 — 既存 backtest_gui.py とは別エントリポイントとして設計
+  <!-- [TASK-0065 方針確定]
+    初期スコープ: bollinger_range_v4_4 を対象とした A単体探索（探索回数/improve回数/variation数/seed 入力、パラメータ範囲設定、実行ログ表示、結果一覧、上位候補確認）
+    後続拡張: B単体探索、A/B組み合わせ探索、apply_params.py による採択結果反映導線 -->
+  <!-- [TASK-0067 基本骨格完了]
+    explore_gui.py エントリポイントと explore_gui_app パッケージ（main_window / input_panel / result_panel）を新規作成済み。
+    BollingerLoopConfig 経由で run_bollinger_exploration_loop に接続する GUI フレームが構築済み。
+    feature_inventory status: not_implemented → partial（TASK-0068 で更新）。
+    残課題: GUI 実機起動確認未実施、BOLLINGER_PARAM_VARIATION_RANGES のモジュールレベル直接変更問題、Stop ボタン即時停止未対応 -->
 
 ### 構成・対象拡張
 - 3レーン以上の戦術構成
