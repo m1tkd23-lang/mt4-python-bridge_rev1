@@ -60,6 +60,7 @@ class ExplorationConfig:
     csv_dir: str | None = None
     cross_month_thresholds: CrossMonthThresholds | None = None
     integrated_thresholds: IntegratedThresholds | None = None
+    csv_paths: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,41 @@ class ExplorationResult:
     cross_month_evaluation: CrossMonthEvaluationResult | None = None
     integrated_evaluation: IntegratedEvaluationResult | None = None
     aggregate_stats: AggregateStats | None = None
+
+
+def _resolve_csv_files(
+    csv_paths: list[str] | None,
+    csv_dir: str | None,
+) -> list[Path] | None:
+    """Resolve CSV file list using priority: csv_paths > csv_dir.
+
+    Args:
+        csv_paths: Explicit list of CSV file paths (highest priority).
+        csv_dir: Directory to glob for ``*.csv`` files (fallback).
+
+    Returns:
+        Sorted list of CSV file paths, or ``None`` if no multi-month
+        evaluation should be performed.
+
+    Raises:
+        ValueError: If *csv_paths* is an empty list (``[]``).
+            Pass ``None`` to skip multi-month evaluation instead.
+    """
+    if csv_paths is not None:
+        if len(csv_paths) == 0:
+            raise ValueError(
+                "csv_paths must not be an empty list. "
+                "Pass None to skip multi-month evaluation."
+            )
+        return [Path(p) for p in csv_paths]
+
+    if csv_dir is not None:
+        csv_dir_path = Path(csv_dir)
+        csv_files = sorted(csv_dir_path.glob("*.csv"))
+        if len(csv_files) >= 2:
+            return csv_files
+
+    return None
 
 
 def run_single_exploration(config: ExplorationConfig) -> ExplorationResult:
@@ -117,47 +153,45 @@ def run_single_exploration(config: ExplorationConfig) -> ExplorationResult:
         thresholds=config.thresholds,
     )
 
-    # 5. Cross-month & integrated evaluation (when csv_dir with multiple CSVs available)
+    # 5. Cross-month & integrated evaluation (csv_paths > csv_dir > csv_path only)
     cross_month_eval: CrossMonthEvaluationResult | None = None
     integrated_eval: IntegratedEvaluationResult | None = None
     agg_stats: AggregateStats | None = None
     final_verdict = evaluation.verdict.value
 
-    if config.csv_dir is not None:
-        csv_dir_path = Path(config.csv_dir)
-        csv_files = sorted(csv_dir_path.glob("*.csv"))
-        if len(csv_files) >= 2:
-            monthly_stats: list[tuple[str, object]] = []
-            for csv_file in csv_files:
-                month_dataset = load_historical_bars_csv(csv_file)
-                month_sim = BacktestSimulator(
-                    strategy_name=config.strategy_name,
-                    symbol=config.symbol,
-                    timeframe=config.timeframe,
-                    pip_size=config.pip_size,
-                    sl_pips=config.sl_pips,
-                    tp_pips=config.tp_pips,
-                    intrabar_fill_policy=config.intrabar_fill_policy,
-                )
-                month_result = month_sim.run(dataset=month_dataset)
-                monthly_stats.append((csv_file.stem, month_result.stats))
+    resolved_csvs = _resolve_csv_files(config.csv_paths, config.csv_dir)
+    if resolved_csvs is not None:
+        monthly_stats: list[tuple[str, object]] = []
+        for csv_file in resolved_csvs:
+            month_dataset = load_historical_bars_csv(csv_file)
+            month_sim = BacktestSimulator(
+                strategy_name=config.strategy_name,
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+                pip_size=config.pip_size,
+                sl_pips=config.sl_pips,
+                tp_pips=config.tp_pips,
+                intrabar_fill_policy=config.intrabar_fill_policy,
+            )
+            month_result = month_sim.run(dataset=month_dataset)
+            monthly_stats.append((csv_file.stem, month_result.stats))
 
-            agg_stats = aggregate_monthly_stats(monthly_stats)
+        agg_stats = aggregate_monthly_stats(monthly_stats)
 
-            cross_month_eval = evaluate_cross_month(
-                agg=agg_stats,
-                thresholds=config.cross_month_thresholds,
-            )
-            integrated_eval = evaluate_integrated(
-                agg=agg_stats,
-                thresholds=config.integrated_thresholds,
-            )
-            final_verdict = integrated_eval.verdict.value
-            logger.info(
-                "Cross-month evaluation: verdict=%s, Integrated: verdict=%s",
-                cross_month_eval.verdict.value,
-                integrated_eval.verdict.value,
-            )
+        cross_month_eval = evaluate_cross_month(
+            agg=agg_stats,
+            thresholds=config.cross_month_thresholds,
+        )
+        integrated_eval = evaluate_integrated(
+            agg=agg_stats,
+            thresholds=config.integrated_thresholds,
+        )
+        final_verdict = integrated_eval.verdict.value
+        logger.info(
+            "Cross-month evaluation: verdict=%s, Integrated: verdict=%s",
+            cross_month_eval.verdict.value,
+            integrated_eval.verdict.value,
+        )
 
     return ExplorationResult(
         strategy_name=config.strategy_name,
@@ -198,6 +232,7 @@ class LoopConfig:
     csv_dir: str | None = None
     cross_month_thresholds: CrossMonthThresholds | None = None
     integrated_thresholds: IntegratedThresholds | None = None
+    csv_paths: list[str] | None = None
 
 
 @dataclass
@@ -261,6 +296,12 @@ def run_exploration_loop(config: LoopConfig, thread: object | None = None) -> Lo
     Returns:
         LoopResult with all iteration details.
     """
+    if config.csv_paths is not None and len(config.csv_paths) == 0:
+        raise ValueError(
+            "csv_paths must not be an empty list. "
+            "Pass None to skip multi-month evaluation."
+        )
+
     random.seed(config.random_seed)
     logger.info("Random seed fixed: %d", config.random_seed)
 
@@ -268,6 +309,10 @@ def run_exploration_loop(config: LoopConfig, thread: object | None = None) -> Lo
     improve_retries = 0
     param_variations: list[dict[str, object]] = []
     current_params = config.strategy_params
+
+    effective_csv_path = config.csv_path
+    if config.csv_paths is not None and len(config.csv_paths) > 0:
+        effective_csv_path = config.csv_paths[-1]
 
     for iteration in range(1, config.max_iterations + 1):
         if thread is not None and getattr(thread, "isInterruptionRequested", lambda: False)():
@@ -282,7 +327,7 @@ def run_exploration_loop(config: LoopConfig, thread: object | None = None) -> Lo
         exploration_config = ExplorationConfig(
             signal_type=config.signal_type,
             strategy_name=strategy_name,
-            csv_path=config.csv_path,
+            csv_path=effective_csv_path,
             symbol=config.symbol,
             timeframe=config.timeframe,
             pip_size=config.pip_size,
@@ -294,6 +339,7 @@ def run_exploration_loop(config: LoopConfig, thread: object | None = None) -> Lo
             csv_dir=config.csv_dir,
             cross_month_thresholds=config.cross_month_thresholds,
             integrated_thresholds=config.integrated_thresholds,
+            csv_paths=config.csv_paths,
         )
 
         logger.info(
@@ -465,6 +511,7 @@ class BollingerExplorationConfig:
     csv_dir: str | None = None
     cross_month_thresholds: CrossMonthThresholds | None = None
     integrated_thresholds: IntegratedThresholds | None = None
+    csv_paths: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -523,47 +570,45 @@ def run_bollinger_exploration(
             thresholds=config.thresholds,
         )
 
-        # 4. Cross-month & integrated evaluation
+        # 4. Cross-month & integrated evaluation (csv_paths > csv_dir > csv_path only)
         cross_month_eval: CrossMonthEvaluationResult | None = None
         integrated_eval: IntegratedEvaluationResult | None = None
         agg_stats: AggregateStats | None = None
         final_verdict = evaluation.verdict.value
 
-        if config.csv_dir is not None:
-            csv_dir_path = Path(config.csv_dir)
-            csv_files = sorted(csv_dir_path.glob("*.csv"))
-            if len(csv_files) >= 2:
-                monthly_stats: list[tuple[str, object]] = []
-                for csv_file in csv_files:
-                    month_dataset = load_historical_bars_csv(csv_file)
-                    month_sim = BacktestSimulator(
-                        strategy_name=config.strategy_name,
-                        symbol=config.symbol,
-                        timeframe=config.timeframe,
-                        pip_size=config.pip_size,
-                        sl_pips=config.sl_pips,
-                        tp_pips=config.tp_pips,
-                        intrabar_fill_policy=config.intrabar_fill_policy,
-                    )
-                    month_result = month_sim.run(dataset=month_dataset)
-                    monthly_stats.append((csv_file.stem, month_result.stats))
+        resolved_csvs = _resolve_csv_files(config.csv_paths, config.csv_dir)
+        if resolved_csvs is not None:
+            monthly_stats: list[tuple[str, object]] = []
+            for csv_file in resolved_csvs:
+                month_dataset = load_historical_bars_csv(csv_file)
+                month_sim = BacktestSimulator(
+                    strategy_name=config.strategy_name,
+                    symbol=config.symbol,
+                    timeframe=config.timeframe,
+                    pip_size=config.pip_size,
+                    sl_pips=config.sl_pips,
+                    tp_pips=config.tp_pips,
+                    intrabar_fill_policy=config.intrabar_fill_policy,
+                )
+                month_result = month_sim.run(dataset=month_dataset)
+                monthly_stats.append((csv_file.stem, month_result.stats))
 
-                agg_stats = aggregate_monthly_stats(monthly_stats)
+            agg_stats = aggregate_monthly_stats(monthly_stats)
 
-                cross_month_eval = evaluate_cross_month(
-                    agg=agg_stats,
-                    thresholds=config.cross_month_thresholds,
-                )
-                integrated_eval = evaluate_integrated(
-                    agg=agg_stats,
-                    thresholds=config.integrated_thresholds,
-                )
-                final_verdict = integrated_eval.verdict.value
-                logger.info(
-                    "Bollinger cross-month: verdict=%s, Integrated: verdict=%s",
-                    cross_month_eval.verdict.value,
-                    integrated_eval.verdict.value,
-                )
+            cross_month_eval = evaluate_cross_month(
+                agg=agg_stats,
+                thresholds=config.cross_month_thresholds,
+            )
+            integrated_eval = evaluate_integrated(
+                agg=agg_stats,
+                thresholds=config.integrated_thresholds,
+            )
+            final_verdict = integrated_eval.verdict.value
+            logger.info(
+                "Bollinger cross-month: verdict=%s, Integrated: verdict=%s",
+                cross_month_eval.verdict.value,
+                integrated_eval.verdict.value,
+            )
 
     return BollingerExplorationResult(
         strategy_name=config.strategy_name,
@@ -662,6 +707,7 @@ class BollingerLoopConfig:
     integrated_thresholds: IntegratedThresholds | None = None
     param_variation_ranges: dict[str, tuple[float, float, float]] | None = None
     seed_overrides_list: list[dict[str, float]] | None = None
+    csv_paths: list[str] | None = None
 
 
 @dataclass
@@ -697,6 +743,12 @@ def run_bollinger_exploration_loop(
     Returns:
         BollingerLoopResult with all iteration details.
     """
+    if config.csv_paths is not None and len(config.csv_paths) == 0:
+        raise ValueError(
+            "csv_paths must not be an empty list. "
+            "Pass None to skip multi-month evaluation."
+        )
+
     random.seed(config.random_seed)
     logger.info(
         "Bollinger loop start: strategy=%s, seed=%d",
@@ -727,9 +779,13 @@ def run_bollinger_exploration_loop(
             logger.info("Bollinger loop stopped: user interruption requested")
             return loop_result
 
+        effective_csv_path = config.csv_path
+        if config.csv_paths is not None and len(config.csv_paths) > 0:
+            effective_csv_path = config.csv_paths[-1]
+
         exploration_config = BollingerExplorationConfig(
             strategy_name=config.strategy_name,
-            csv_path=config.csv_path,
+            csv_path=effective_csv_path,
             symbol=config.symbol,
             timeframe=config.timeframe,
             pip_size=config.pip_size,
@@ -741,6 +797,7 @@ def run_bollinger_exploration_loop(
             csv_dir=config.csv_dir,
             cross_month_thresholds=config.cross_month_thresholds,
             integrated_thresholds=config.integrated_thresholds,
+            csv_paths=config.csv_paths,
         )
 
         logger.info(
