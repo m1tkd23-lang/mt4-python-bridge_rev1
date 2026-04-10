@@ -504,7 +504,7 @@ class BollingerExplorationConfig:
     timeframe: str = "M5"
     pip_size: float = 0.01
     sl_pips: float = 10.0
-    tp_pips: float = 10.0
+    tp_pips: float = 30.0
     intrabar_fill_policy: IntrabarFillPolicy = IntrabarFillPolicy.CONSERVATIVE
     param_overrides: dict[str, float] | None = None
     thresholds: EvaluationThresholds | None = None
@@ -694,7 +694,7 @@ class BollingerLoopConfig:
     timeframe: str = "M5"
     pip_size: float = 0.01
     sl_pips: float = 10.0
-    tp_pips: float = 10.0
+    tp_pips: float = 30.0
     intrabar_fill_policy: IntrabarFillPolicy = IntrabarFillPolicy.CONSERVATIVE
     param_overrides: dict[str, float] | None = None
     thresholds: EvaluationThresholds | None = None

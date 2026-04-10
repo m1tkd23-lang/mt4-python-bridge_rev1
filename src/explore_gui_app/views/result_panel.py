@@ -22,6 +22,12 @@ from backtest.exploration_loop import BollingerExplorationResult, BollingerLoopR
 class ExploreResultPanel(QWidget):
     """Panel showing exploration results: iteration table + log display."""
 
+    # Phase 2 table sizing constants
+    _P2_ROW_HEIGHT = 30
+    _P2_HEADER_HEIGHT = 30
+    _P2_MARGIN = 6
+    _P2_MAX_HEIGHT = 200
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
@@ -60,6 +66,7 @@ class ExploreResultPanel(QWidget):
 
         # Lower: log display
         log_container = QWidget()
+        log_container.setMinimumHeight(120)
         log_layout = QVBoxLayout(log_container)
         log_layout.setContentsMargins(4, 4, 4, 4)
         log_layout.addWidget(QLabel("<b>Exploration Log</b>"))
@@ -89,7 +96,7 @@ class ExploreResultPanel(QWidget):
         splitter.addWidget(monthly_container)
 
         splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
+        splitter.setStretchFactor(1, 2)
         splitter.setStretchFactor(2, 2)
         layout.addWidget(splitter)
 
@@ -283,6 +290,7 @@ class ExploreResultPanel(QWidget):
     def clear_phase2_results(self) -> None:
         """Clear Phase 2 results table."""
         self._phase2_table.setRowCount(0)
+        self._adjust_phase2_table_height()
 
     def add_phase2_result(
         self, index: int, result: BollingerExplorationResult
@@ -310,6 +318,8 @@ class ExploreResultPanel(QWidget):
             if row_color:
                 item.setBackground(row_color)
             self._phase2_table.setItem(row, col, item)
+
+        self._adjust_phase2_table_height()
 
     # ------------------------------------------------------------------
     # Phase 2 summary (adoption assessment)
@@ -397,6 +407,21 @@ class ExploreResultPanel(QWidget):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _adjust_phase2_table_height(self) -> None:
+        """Adjust Phase 2 table height based on row count."""
+        row_count = self._phase2_table.rowCount()
+        if row_count == 0:
+            self._phase2_table.setMinimumHeight(0)
+            self._phase2_table.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
+            return
+        desired = self._P2_HEADER_HEIGHT + row_count * self._P2_ROW_HEIGHT + self._P2_MARGIN
+        clamped = min(desired, self._P2_MAX_HEIGHT)
+        self._phase2_table.setMinimumHeight(clamped)
+        if desired <= self._P2_MAX_HEIGHT:
+            self._phase2_table.setMaximumHeight(desired)
+        else:
+            self._phase2_table.setMaximumHeight(self._P2_MAX_HEIGHT)
 
     @staticmethod
     def _verdict_color(verdict: str) -> QColor | None:

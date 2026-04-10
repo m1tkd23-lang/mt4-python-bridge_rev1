@@ -427,6 +427,14 @@ Only referenced when necessary.
 - [docs/low] task_history_archive.md の TASK-0001〜TASK-0059 全59エントリを過去TASK作業記録.md と同一の要約形式に圧縮し、1036行→282行（73%削減）を達成
 - 関連: .claude_orchestrator/docs/task_history/archive/task_history_archive.md
 
+## TASK-0082 : 過去TASK作業記録.md の TASK-0080・TASK-0081 エントリフォーマット統一
+- [docs/low] TASK-0080・TASK-0081 の2エントリを ### サブセクション形式から [task_type/risk_level] プレフィックス要約形式に書き換え、TASK-0062〜0079 と統一
+- 関連: .claude_orchestrator/docs/task_history/過去TASK作業記録.md
+
+## TASK-0083 : 過去TASK作業記録.md の TASK-0082 エントリフォーマット統一（自エントリ修正）
+- [docs/low] TASK-0082 エントリを他エントリと同一の [task_type/risk_level] プレフィックス要約形式に書き換え、フォーマット統一を完了
+- 関連: .claude_orchestrator/docs/task_history/過去TASK作業記録.md
+
 
 
 
