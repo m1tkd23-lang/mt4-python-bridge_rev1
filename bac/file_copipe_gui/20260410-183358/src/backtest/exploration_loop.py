@@ -1,4 +1,4 @@
-# src\backtest\exploration_loop.py
+# src/backtest/exploration_loop.py
 """Tactical exploration loop: generate → backtest → evaluate → verdict.
 
 This module orchestrates exploration cycles of strategy generation and evaluation.
@@ -395,8 +395,6 @@ BOLLINGER_PARAM_VARIATION_RANGES: dict[str, dict[str, tuple[float, float, float]
         "mt4_bridge.strategies.bollinger_range_v4_4::RANGE_MIDDLE_DISTANCE_THRESHOLD": (0.001, 0.004, 0.0005),
     },
     "bollinger_trend_B": {
-        "mt4_bridge.strategies.bollinger_trend_B::BOLLINGER_PERIOD": (10, 40, 5),
-        "mt4_bridge.strategies.bollinger_trend_B::BOLLINGER_SIGMA": (1.5, 3.0, 0.25),
         "mt4_bridge.strategies.bollinger_trend_B::TREND_SLOPE_THRESHOLD": (0.00001, 0.0001, 0.00001),
         "mt4_bridge.strategies.bollinger_trend_B::STRONG_TREND_SLOPE_THRESHOLD": (0.0002, 0.001, 0.0001),
     },
@@ -406,46 +404,10 @@ BOLLINGER_PARAM_VARIATION_RANGES: dict[str, dict[str, tuple[float, float, float]
         "mt4_bridge.strategies.bollinger_range_v4_4::RANGE_SLOPE_THRESHOLD": (0.0002, 0.001, 0.0001),
         "mt4_bridge.strategies.bollinger_range_v4_4::RANGE_BAND_WIDTH_THRESHOLD": (0.001, 0.006, 0.0005),
         "mt4_bridge.strategies.bollinger_range_v4_4::RANGE_MIDDLE_DISTANCE_THRESHOLD": (0.001, 0.004, 0.0005),
-        "mt4_bridge.strategies.bollinger_trend_B::BOLLINGER_PERIOD": (10, 40, 5),
-        "mt4_bridge.strategies.bollinger_trend_B::BOLLINGER_SIGMA": (1.5, 3.0, 0.25),
         "mt4_bridge.strategies.bollinger_trend_B::TREND_SLOPE_THRESHOLD": (0.00001, 0.0001, 0.00001),
         "mt4_bridge.strategies.bollinger_trend_B::STRONG_TREND_SLOPE_THRESHOLD": (0.0002, 0.001, 0.0001),
     },
 }
-
-
-def _build_bollinger_spec_index(strategy_name: str) -> dict[str, object]:
-    specs = get_param_specs(strategy_name)
-    return {f"{spec.module_path}::{spec.name}": spec for spec in specs}
-
-
-def _apply_bollinger_override_constraints(
-    strategy_name: str,
-    overrides: dict[str, float],
-) -> dict[str, float]:
-    constrained = dict(overrides)
-    spec_index = _build_bollinger_spec_index(strategy_name)
-
-    trend_key = "mt4_bridge.strategies.bollinger_trend_B::TREND_SLOPE_THRESHOLD"
-    strong_key = "mt4_bridge.strategies.bollinger_trend_B::STRONG_TREND_SLOPE_THRESHOLD"
-
-    if strategy_name in {"bollinger_trend_B", "bollinger_combo_AB", "bollinger_combo_AB_v1"}:
-        trend_val = constrained.get(trend_key)
-        strong_val = constrained.get(strong_key)
-        if trend_val is not None and strong_val is not None and strong_val < trend_val:
-            constrained[strong_key] = trend_val
-
-    for key, value in list(constrained.items()):
-        spec = spec_index.get(key)
-        if spec is None:
-            continue
-        bounded = min(max(float(value), spec.min_val), spec.max_val)
-        if spec.param_type == "int":
-            constrained[key] = int(round(bounded))
-        else:
-            constrained[key] = round(bounded, spec.decimals)
-
-    return constrained
 
 
 @dataclass(frozen=True)
@@ -495,10 +457,7 @@ def run_bollinger_exploration(
     Returns:
         BollingerExplorationResult containing the verdict and evaluation details.
     """
-    overrides = _apply_bollinger_override_constraints(
-        config.strategy_name,
-        config.param_overrides or {},
-    )
+    overrides = config.param_overrides or {}
     specs = get_param_specs(config.strategy_name)
 
     with apply_strategy_overrides(overrides, specs):
@@ -608,10 +567,7 @@ def generate_bollinger_param_variations(
         return []
 
     ranges = copy.deepcopy(ranges_orig)
-    effective_base = _apply_bollinger_override_constraints(
-        strategy_name,
-        dict(base_overrides or {}),
-    )
+    effective_base = dict(base_overrides or {})
     variations: list[dict[str, float]] = []
     seen: set[tuple[tuple[str, float], ...]] = set()
     base_key = tuple(sorted((k, float(v)) for k, v in effective_base.items()))
@@ -629,7 +585,6 @@ def generate_bollinger_param_variations(
             possible = [round(lo + i * step, 10) for i in range(n_steps)]
             candidate[param_key] = random.choice(possible)
 
-        candidate = _apply_bollinger_override_constraints(strategy_name, candidate)
         key = tuple(sorted((k, float(v)) for k, v in candidate.items()))
         if key in seen:
             continue
@@ -661,7 +616,6 @@ class BollingerLoopConfig:
     cross_month_thresholds: CrossMonthThresholds | None = None
     integrated_thresholds: IntegratedThresholds | None = None
     param_variation_ranges: dict[str, tuple[float, float, float]] | None = None
-    seed_overrides_list: list[dict[str, float]] | None = None
 
 
 @dataclass
@@ -707,19 +661,7 @@ def run_bollinger_exploration_loop(
     loop_result = BollingerLoopResult()
     improve_retries = 0
     param_variations: list[dict[str, float]] = []
-    seed_queue = [
-        _apply_bollinger_override_constraints(config.strategy_name, dict(seed))
-        for seed in (config.seed_overrides_list or [])
-        if seed
-    ]
-    base_overrides = _apply_bollinger_override_constraints(
-        config.strategy_name,
-        dict(config.param_overrides or {}),
-    )
-    current_overrides = dict(base_overrides)
-
-    if not current_overrides and seed_queue:
-        current_overrides = seed_queue.pop(0)
+    current_overrides = dict(config.param_overrides or {})
 
     for iteration in range(1, config.max_iterations + 1):
         if thread is not None and getattr(thread, "isInterruptionRequested", lambda: False)():
@@ -788,17 +730,14 @@ def run_bollinger_exploration_loop(
             logger.info("Bollinger parameters discarded: %s", current_overrides)
             improve_retries = 0
             param_variations = []
-
-            if seed_queue:
-                current_overrides = seed_queue.pop(0)
-            else:
-                fresh = generate_bollinger_param_variations(
-                    strategy_name=config.strategy_name,
-                    base_overrides=base_overrides,
-                    count=1,
-                    ranges_override=config.param_variation_ranges,
-                )
-                current_overrides = fresh[0] if fresh else dict(base_overrides)
+            # Generate fresh random overrides for next iteration
+            fresh = generate_bollinger_param_variations(
+                strategy_name=config.strategy_name,
+                base_overrides=config.param_overrides,
+                count=1,
+                ranges_override=config.param_variation_ranges,
+            )
+            current_overrides = fresh[0] if fresh else dict(config.param_overrides or {})
             continue
 
         if verdict == "improve":
@@ -836,16 +775,13 @@ def run_bollinger_exploration_loop(
                 )
                 improve_retries = 0
                 param_variations = []
-                if seed_queue:
-                    current_overrides = seed_queue.pop(0)
-                else:
-                    fresh = generate_bollinger_param_variations(
-                        strategy_name=config.strategy_name,
-                        base_overrides=base_overrides,
-                        count=1,
-                        ranges_override=config.param_variation_ranges,
-                    )
-                    current_overrides = fresh[0] if fresh else dict(base_overrides)
+                fresh = generate_bollinger_param_variations(
+                    strategy_name=config.strategy_name,
+                    base_overrides=config.param_overrides,
+                    count=1,
+                    ranges_override=config.param_variation_ranges,
+                )
+                current_overrides = fresh[0] if fresh else dict(config.param_overrides or {})
             continue
 
     loop_result.stopped_reason = "max_iterations"

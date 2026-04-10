@@ -1,4 +1,4 @@
-# src\explore_gui_app\views\result_panel.py
+# src/explore_gui_app/views/result_panel.py
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
@@ -21,8 +21,6 @@ class ExploreResultPanel(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-
-        self._results: list[BollingerExplorationResult] = []
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -70,7 +68,6 @@ class ExploreResultPanel(QWidget):
         layout.addWidget(self._status_label)
 
     def clear(self) -> None:
-        self._results.clear()
         self._table.setRowCount(0)
         self._log_text.clear()
         self._status_label.setText("Ready")
@@ -84,8 +81,6 @@ class ExploreResultPanel(QWidget):
     def add_iteration_result(
         self, iteration: int, result: BollingerExplorationResult
     ) -> None:
-        self._results.append(result)
-
         row = self._table.rowCount()
         self._table.insertRow(row)
 
@@ -114,9 +109,6 @@ class ExploreResultPanel(QWidget):
             if col < 5:
                 item.setTextAlignment(Qt.AlignCenter)
             self._table.setItem(row, col, item)
-
-    def get_all_iteration_results(self) -> list[BollingerExplorationResult]:
-        return list(self._results)
 
     def show_final_result(self, loop_result: BollingerLoopResult) -> None:
         if loop_result.adopted:

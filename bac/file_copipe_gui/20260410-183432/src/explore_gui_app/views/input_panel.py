@@ -29,7 +29,6 @@ class ExploreInputPanel(QWidget):
     """Input panel for bollinger exploration configuration."""
 
     run_requested = Signal()
-    refine_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -37,8 +36,6 @@ class ExploreInputPanel(QWidget):
         self._param_ranges: dict[str, tuple[float, float, float]] = dict(
             BOLLINGER_PARAM_VARIATION_RANGES.get(_AVAILABLE_STRATEGIES[0], {})
         )
-        self._base_param_overrides: dict[str, float] | None = None
-        self._seed_param_overrides_list: list[dict[str, float]] = []
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -56,18 +53,15 @@ class ExploreInputPanel(QWidget):
 
         btn_row = QHBoxLayout()
         self.run_button = QPushButton("Run Exploration")
-        self.refine_button = QPushButton("Refine From Trends")
         self.stop_button = QPushButton("Stop")
         self.stop_button.setEnabled(False)
         btn_row.addWidget(self.run_button)
-        btn_row.addWidget(self.refine_button)
         btn_row.addWidget(self.stop_button)
         layout.addLayout(btn_row)
 
         layout.addStretch(1)
 
         self.run_button.clicked.connect(self.run_requested.emit)
-        self.refine_button.clicked.connect(self.refine_requested.emit)
         self._refresh_param_summary()
 
     # ------------------------------------------------------------------
@@ -90,8 +84,6 @@ class ExploreInputPanel(QWidget):
         self._param_ranges = dict(
             BOLLINGER_PARAM_VARIATION_RANGES.get(strategy_name, {})
         )
-        self._base_param_overrides = None
-        self._seed_param_overrides_list = []
         self._param_section.setTitle(f"Exploration Parameters ({strategy_name})")
         self._refresh_param_summary()
 
@@ -191,10 +183,6 @@ class ExploreInputPanel(QWidget):
         self.param_detail_label.setWordWrap(True)
         layout.addWidget(self.param_detail_label)
 
-        self.refinement_info_label = QLabel()
-        self.refinement_info_label.setWordWrap(True)
-        layout.addWidget(self.refinement_info_label)
-
         strategy_name = self.strategy_combo.currentText()
         self._param_section = CollapsibleSection(
             f"Exploration Parameters ({strategy_name})",
@@ -219,24 +207,17 @@ class ExploreInputPanel(QWidget):
 
         if not self._param_ranges:
             self.param_detail_label.setText("No exploration parameters enabled.")
-        else:
-            lines: list[str] = []
-            for qualified_key, (lo, hi, step) in self._param_ranges.items():
-                name = qualified_key.split("::", 1)[1]
-                lines.append(f"{name}: {lo} .. {hi} (step {step})")
-            self.param_detail_label.setText("\n".join(lines))
+            return
 
-        base_count = len(self._base_param_overrides or {})
-        seed_count = len(self._seed_param_overrides_list)
-        if base_count == 0 and seed_count == 0:
-            self.refinement_info_label.setText("Refinement seeds: none")
-        else:
-            self.refinement_info_label.setText(
-                f"Refinement seeds prepared: base={base_count} value(s), seed candidates={seed_count}"
-            )
+        lines: list[str] = []
+        for qualified_key, (lo, hi, step) in self._param_ranges.items():
+            name = qualified_key.split("::", 1)[1]
+            lines.append(f"{name}: {lo} .. {hi} (step {step})")
+
+        self.param_detail_label.setText("\n".join(lines))
 
     # ------------------------------------------------------------------
-    # Public getters / setters
+    # Public getters
     # ------------------------------------------------------------------
 
     def get_csv_path(self) -> str:
@@ -260,35 +241,6 @@ class ExploreInputPanel(QWidget):
 
     def get_param_override_ranges(self) -> dict[str, tuple[float, float, float]]:
         return dict(self._param_ranges)
-
-    def set_param_override_ranges(
-        self,
-        ranges: dict[str, tuple[float, float, float]],
-    ) -> None:
-        self._param_ranges = dict(ranges)
-        self._refresh_param_summary()
-
-    def get_base_param_overrides(self) -> dict[str, float] | None:
-        if not self._base_param_overrides:
-            return None
-        return dict(self._base_param_overrides)
-
-    def set_base_param_overrides(
-        self,
-        overrides: dict[str, float] | None,
-    ) -> None:
-        self._base_param_overrides = dict(overrides) if overrides else None
-        self._refresh_param_summary()
-
-    def get_seed_param_overrides_list(self) -> list[dict[str, float]]:
-        return [dict(seed) for seed in self._seed_param_overrides_list]
-
-    def set_seed_param_overrides_list(
-        self,
-        seeds: list[dict[str, float]] | None,
-    ) -> None:
-        self._seed_param_overrides_list = [dict(seed) for seed in (seeds or [])]
-        self._refresh_param_summary()
 
     def get_strategy_name(self) -> str:
         return self.strategy_combo.currentText()

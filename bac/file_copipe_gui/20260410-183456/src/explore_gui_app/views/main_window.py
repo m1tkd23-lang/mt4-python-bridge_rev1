@@ -19,8 +19,6 @@ from backtest.exploration_loop import (
     BollingerLoopResult,
     run_bollinger_exploration_loop,
 )
-from backtest_gui_app.services.strategy_params import get_param_specs
-from explore_gui_app.services.refinement import build_refinement_plan
 from explore_gui_app.views.input_panel import ExploreInputPanel
 from explore_gui_app.views.result_panel import ExploreResultPanel
 
@@ -80,7 +78,6 @@ class ExploreMainWindow(QMainWindow):
         root_layout.addWidget(self._result_panel, 1)
 
         self._input_panel.run_requested.connect(self._on_run)
-        self._input_panel.refine_requested.connect(self._on_refine_from_trends)
         self._input_panel.stop_button.clicked.connect(self._on_stop)
 
     def _on_run(self) -> None:
@@ -90,7 +87,7 @@ class ExploreMainWindow(QMainWindow):
             return
 
         strategy_name = self._input_panel.get_strategy_name()
-        param_overrides = self._input_panel.get_base_param_overrides()
+        param_overrides: dict[str, float] | None = None
 
         param_variation_ranges: dict[str, tuple[float, float, float]] | None = None
         user_ranges = self._input_panel.get_param_override_ranges()
@@ -111,7 +108,6 @@ class ExploreMainWindow(QMainWindow):
             random_seed=self._input_panel.get_random_seed(),
             param_overrides=param_overrides,
             param_variation_ranges=param_variation_ranges,
-            seed_overrides_list=self._input_panel.get_seed_param_overrides_list(),
         )
 
         self._max_iterations = config.max_iterations
@@ -119,7 +115,6 @@ class ExploreMainWindow(QMainWindow):
         self._result_panel.clear()
         self._result_panel.set_status("Running...")
         self._input_panel.run_button.setEnabled(False)
-        self._input_panel.refine_button.setEnabled(False)
         self._input_panel.stop_button.setEnabled(True)
 
         self._worker = _ExplorationWorker(config)
@@ -128,59 +123,6 @@ class ExploreMainWindow(QMainWindow):
         self._worker.finished_error.connect(self._on_finished_error)
         self._worker.log_message.connect(self._result_panel.append_log)
         self._worker.start()
-
-    def _on_refine_from_trends(self) -> None:
-        results = self._result_panel.get_all_iteration_results()
-        if len(results) < 3:
-            QMessageBox.warning(
-                self,
-                "Refinement Error",
-                "At least 3 exploration results are required before refinement.",
-            )
-            return
-
-        strategy_name = self._input_panel.get_strategy_name()
-        current_ranges = self._input_panel.get_param_override_ranges()
-        if not current_ranges:
-            QMessageBox.warning(
-                self,
-                "Refinement Error",
-                "No exploration parameters are enabled.",
-            )
-            return
-
-        specs = get_param_specs(strategy_name)
-        if not specs:
-            QMessageBox.warning(
-                self,
-                "Refinement Error",
-                f"No parameter specs found for strategy '{strategy_name}'.",
-            )
-            return
-
-        try:
-            plan = build_refinement_plan(
-                strategy_name=strategy_name,
-                results=results,
-                current_ranges=current_ranges,
-                specs=specs,
-            )
-        except Exception as exc:
-            logger.exception("Trend refinement failed")
-            QMessageBox.critical(self, "Refinement Error", str(exc))
-            return
-
-        self._input_panel.set_param_override_ranges(plan.recommended_ranges)
-        self._input_panel.set_base_param_overrides(plan.base_overrides)
-        self._input_panel.set_seed_param_overrides_list(plan.seed_overrides_list)
-
-        for line in plan.summary_lines:
-            self._result_panel.append_log(line)
-
-        self._result_panel.set_status(
-            f"Refinement ready: {len(plan.top_results)} top result(s), "
-            f"{len(plan.seed_overrides_list)} seed candidate(s)"
-        )
 
     def _on_stop(self) -> None:
         if self._worker and self._worker.isRunning():
@@ -213,6 +155,5 @@ class ExploreMainWindow(QMainWindow):
 
     def _cleanup_worker(self) -> None:
         self._input_panel.run_button.setEnabled(True)
-        self._input_panel.refine_button.setEnabled(True)
         self._input_panel.stop_button.setEnabled(False)
         self._worker = None

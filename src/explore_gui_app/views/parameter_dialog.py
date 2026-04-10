@@ -21,9 +21,6 @@ from backtest.exploration_loop import BOLLINGER_PARAM_VARIATION_RANGES
 from backtest_gui_app.services.strategy_params import StrategyParamSpec, get_param_specs
 
 
-_STRATEGY_NAME = "bollinger_range_v4_4"
-
-
 @dataclass
 class _EditableParamRow:
     spec: StrategyParamSpec
@@ -39,7 +36,7 @@ class ParameterDialog(QDialog):
     def __init__(
         self,
         parent: QWidget | None = None,
-        strategy_name: str = _STRATEGY_NAME,
+        strategy_name: str = "bollinger_range_v4_4",
         current_ranges: dict[str, tuple[float, float, float]] | None = None,
     ) -> None:
         super().__init__(parent)
