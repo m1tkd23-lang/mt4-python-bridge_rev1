@@ -23,6 +23,7 @@ class StrategyParamSpec:
 
 
 _V44_MODULE = "mt4_bridge.strategies.bollinger_range_v4_4"
+_V44_TUNED_A_MODULE = "mt4_bridge.strategies.bollinger_range_v4_4_tuned_a"
 _TREND_B_MODULE = "mt4_bridge.strategies.bollinger_trend_B"
 
 _BOLLINGER_RANGE_V4_4_PARAMS: list[StrategyParamSpec] = [
@@ -78,6 +79,59 @@ _BOLLINGER_RANGE_V4_4_PARAMS: list[StrategyParamSpec] = [
     ),
 ]
 
+_BOLLINGER_RANGE_V4_4_TUNED_A_PARAMS: list[StrategyParamSpec] = [
+    StrategyParamSpec(
+        "BOLLINGER_PERIOD", "BB Period", "int", 26, 5, 200, 1, 0, _V44_TUNED_A_MODULE
+    ),
+    StrategyParamSpec(
+        "BOLLINGER_SIGMA", "BB Sigma", "float", 1.9, 0.5, 5.0, 0.1, 2, _V44_TUNED_A_MODULE
+    ),
+    StrategyParamSpec(
+        "BOLLINGER_EXTREME_SIGMA",
+        "BB Extreme Sigma",
+        "float",
+        3.0,
+        1.0,
+        5.0,
+        0.1,
+        2,
+        _V44_TUNED_A_MODULE,
+    ),
+    StrategyParamSpec(
+        "RANGE_SLOPE_THRESHOLD",
+        "Range Slope Thr",
+        "float",
+        0.0006,
+        0.0,
+        0.01,
+        0.0001,
+        4,
+        _V44_TUNED_A_MODULE,
+    ),
+    StrategyParamSpec(
+        "RANGE_BAND_WIDTH_THRESHOLD",
+        "Range BW Thr",
+        "float",
+        0.0035,
+        0.0,
+        0.05,
+        0.0005,
+        4,
+        _V44_TUNED_A_MODULE,
+    ),
+    StrategyParamSpec(
+        "RANGE_MIDDLE_DISTANCE_THRESHOLD",
+        "Range Mid Dist Thr",
+        "float",
+        0.0022,
+        0.0,
+        0.05,
+        0.0005,
+        4,
+        _V44_TUNED_A_MODULE,
+    ),
+]
+
 _BOLLINGER_TREND_B_PARAMS: list[StrategyParamSpec] = [
     StrategyParamSpec(
         "BOLLINGER_PERIOD", "Trend BB Period", "int", 20, 5, 200, 1, 0, _TREND_B_MODULE
@@ -120,6 +174,7 @@ _BOLLINGER_TREND_B_PARAMS: list[StrategyParamSpec] = [
 # Map strategy names to their parameter specs.
 STRATEGY_PARAM_MAP: dict[str, list[StrategyParamSpec]] = {
     "bollinger_range_v4_4": _BOLLINGER_RANGE_V4_4_PARAMS,
+    "bollinger_range_v4_4_tuned_a": _BOLLINGER_RANGE_V4_4_TUNED_A_PARAMS,
     "bollinger_range_A": _BOLLINGER_RANGE_V4_4_PARAMS,
     "bollinger_trend_B": _BOLLINGER_TREND_B_PARAMS,
     "bollinger_combo_AB": _BOLLINGER_RANGE_V4_4_PARAMS + _BOLLINGER_TREND_B_PARAMS,
