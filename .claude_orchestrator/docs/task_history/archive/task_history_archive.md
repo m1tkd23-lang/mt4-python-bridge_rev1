@@ -435,6 +435,15 @@ Only referenced when necessary.
 - [docs/low] TASK-0082 エントリを他エントリと同一の [task_type/risk_level] プレフィックス要約形式に書き換え、フォーマット統一を完了
 - 関連: .claude_orchestrator/docs/task_history/過去TASK作業記録.md
 
+## TASK-0084 : 過去TASK作業記録.md の TASK-0083 エントリ修正 + 記録フォーマット仕様の明記
+- [docs/low] TASK-0083 エントリを [docs/low] プレフィックス要約形式に書き換え、## 目的セクションに記録フォーマット仕様を追記
+- 関連: .claude_orchestrator/docs/task_history/過去TASK作業記録.md
+
+## TASK-0085 : explore_gui 戦略選択UI追加による B単体探索対応
+- [feature/medium] 戦略選択コンボボックスを input_panel に追加し bollinger_trend_B を選択可能にした。パラメータ表示・ParameterDialog は選択戦略に応じて動的切替
+- 関連: src/explore_gui_app/views/input_panel.py, src/explore_gui_app/views/parameter_dialog.py, src/backtest_gui_app/services/strategy_params.py, src/backtest_gui_app/widgets/collapsible_section.py
+- 注意: GUI実画面確認未実施。戦略切替時のレイアウト崩れ・パラメータ表示不整合は手動確認が必要
+
 
 
 
