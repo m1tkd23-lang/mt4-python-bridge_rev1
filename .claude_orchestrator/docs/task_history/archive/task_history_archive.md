@@ -449,3 +449,9 @@ Only referenced when necessary.
 - 関連: .claude_orchestrator/docs/feature_inventory.md, .claude_orchestrator/docs/task_history/過去TASK作業記録.md
 - 注意: TASK-0085 carry_over の GUI 実画面確認が未実施。戦略切替時のレイアウト・パラメータ表示の動作確認は後続タスクで必要
 
+## TASK-0087 : Exploration GUI 複数月評価フロー導入の実装計画とdocs追記
+- [docs/low] docs/開発の目的本筋.md を新規作成し、複数月評価フローの目的・GUI仕様（Selected 3 months / All CSVs / Custom）・multi-month評価方針・refine方針・対象ファイル・段階導入方針を整理
+- 関連: docs/開発の目的本筋.md
+- 注意: Selected 3 months のファイル名解析が規則外ファイル名に対して未定義。Step2 で csv_paths を追加する際の csv_path / csv_dir との優先順位設計が未確定
+
+
