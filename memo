@@ -23,3 +23,8 @@ pyinstaller --noconfirm --onedir --windowed --name mt4-watch-gui --paths src --c
 
 #csvテスト
 python C:\WS\repos\mt4-python-bridge\TEST\analyze_trades.py
+
+
+解析シミュレーション
+
+python src/explore_gui.py 

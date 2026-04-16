@@ -444,17 +444,8 @@ Only referenced when necessary.
 - 関連: src/explore_gui_app/views/input_panel.py, src/explore_gui_app/views/parameter_dialog.py, src/backtest_gui_app/services/strategy_params.py, src/backtest_gui_app/widgets/collapsible_section.py
 - 注意: GUI実画面確認未実施。戦略切替時のレイアウト崩れ・パラメータ表示不整合は手動確認が必要
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+## TASK-0086 : feature_inventory.md TASK-0085 B単体探索UI対応の実装反映 + 過去TASK作業記録.md エントリ追加
+- [docs/low] feature_inventory.md の explore_gui セクションに TASK-0085 B単体探索UI対応の実装完了を追記し、過去TASK作業記録.md の TASK-0084・TASK-0085 エントリを既定フォーマットで追加
+- 関連: .claude_orchestrator/docs/feature_inventory.md, .claude_orchestrator/docs/task_history/過去TASK作業記録.md
+- 注意: TASK-0085 carry_over の GUI 実画面確認が未実施。戦略切替時のレイアウト・パラメータ表示の動作確認は後続タスクで必要
 

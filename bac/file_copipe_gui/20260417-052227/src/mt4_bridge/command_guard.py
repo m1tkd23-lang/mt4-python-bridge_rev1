@@ -1,4 +1,4 @@
-# src\mt4_bridge\command_guard.py
+# src/mt4_bridge/command_guard.py
 from __future__ import annotations
 
 import json
@@ -131,10 +131,6 @@ def has_effective_pending_command(
     return False, "no pending command"
 
 
-def _is_entry_action(action: SignalAction) -> bool:
-    return action in (SignalAction.BUY, SignalAction.SELL)
-
-
 def should_emit_command(
     decision: SignalDecision,
     runtime_state: RuntimeState,
@@ -164,20 +160,14 @@ def should_emit_command(
     )
     current_action = decision.action.value
 
-    # 5分足が確定するまで、そのlaneでは新規エントリーを再発行しない
-    # 以前は「同じbarかつ同じaction」のみ禁止だったが、
-    # それでは同一バー内の再入場連打を十分に防げない。
     if (
-        _is_entry_action(decision.action)
-        and latest_bar_time is not None
+        latest_bar_time is not None
         and last_command_bar_time == latest_bar_time
+        and last_command_action == current_action
     ):
         return CommandGuardResult(
             allowed=False,
-            reason=(
-                "entry already emitted for the same lane on the current bar; "
-                "new entry is blocked until the next bar is confirmed"
-            ),
+            reason="command already emitted for the same lane, same bar, and same action",
         )
 
     if skip_if_pending_command:

@@ -1,8 +1,6 @@
 # src/mt4_bridge/strategies/bollinger_range_v4_4.py
 from __future__ import annotations
 
-from math import sqrt
-
 from mt4_bridge.models import (
     MarketSnapshot,
     PositionSnapshot,
@@ -11,374 +9,45 @@ from mt4_bridge.models import (
 )
 from mt4_bridge.signal_exceptions import SignalEngineError
 
-
-# =========================
-# 調整パラメータ
-# =========================
-# ボリンジャーバンド
-BOLLINGER_PERIOD = 20
-BOLLINGER_SIGMA = 2.0
-BOLLINGER_EXTREME_SIGMA = 3.0  # v4.4 追加: 3σ即時タッチ用
-
-# レンジ判定用 MA
-RANGE_MA_PERIOD = 10
-RANGE_SLOPE_LOOKBACK = 5
-RANGE_SLOPE_THRESHOLD = 0.0005
-
-# レンジ判定用のバンド幅しきい値
-# normalized_band_width = (upper - lower) / middle
-RANGE_BAND_WIDTH_THRESHOLD = 0.003
-
-# レンジ判定用のミドル距離しきい値
-# distance_from_middle = abs(latest_close - middle_band) / middle_band
-RANGE_MIDDLE_DISTANCE_THRESHOLD = 0.002
-
-# トレンド判定用 MA
-TREND_MA_PERIOD = 15
-TREND_SLOPE_LOOKBACK = 2
-TREND_SLOPE_THRESHOLD = 0.0003
-
-# トレンド判定時に価格位置も見る
-TREND_PRICE_POSITION_FILTER_ENABLED = True
-
-# エントリー確認
-# range:
-#   previous_close がバンド外
-#   latest_close がバンド内へ戻ったらエントリー
-RANGE_REQUIRE_REENTRY_CONFIRMATION = True
-
-# trend:
-#   previous_close がまだブレイクしておらず
-#   latest_close でブレイクしたらエントリー
-TREND_REQUIRE_BREAK_CONFIRMATION = True
-
-# 決済ルール
-EXIT_ON_RANGE_MIDDLE_BAND = True
-CLOSE_ON_OPPOSITE_TREND_STATE = True
-
-# =========================
-# v4.2 追加: range failure exit
-# =========================
-# レンジ回帰を狙ったポジションが失敗した時だけ早期撤退する
-# adverse_move_threshold = band_width * ratio
-ENABLE_RANGE_FAILURE_EXIT = True
-RANGE_FAILURE_ADVERSE_MOVE_RATIO = 0.28
-
-# =========================
-# v4.4 追加: 3σタッチ即時エントリー
-# =========================
-# range時のみ、足確定時に high/low が 3σ にタッチしていれば即エントリー
-ENABLE_RANGE_EXTREME_TOUCH_ENTRY = True
-
-
-def required_bars() -> int:
-    return max(
-        BOLLINGER_PERIOD + 1,
-        RANGE_MA_PERIOD + RANGE_SLOPE_LOOKBACK,
-        TREND_MA_PERIOD + TREND_SLOPE_LOOKBACK,
-    )
-
-
-def _simple_moving_average(values: list[float]) -> float:
-    if not values:
-        raise SignalEngineError("Moving average requires at least 1 value")
-    return sum(values) / len(values)
-
-
-def _standard_deviation(values: list[float], mean: float) -> float:
-    if not values:
-        raise SignalEngineError("Standard deviation requires at least 1 value")
-    variance = sum((value - mean) ** 2 for value in values) / len(values)
-    return sqrt(variance)
-
-
-def _calculate_bollinger_bands_from_window(
-    window: list[float],
-    sigma: float,
-) -> tuple[float, float, float, float]:
-    if len(window) < BOLLINGER_PERIOD:
-        raise SignalEngineError(
-            f"At least {BOLLINGER_PERIOD} closes are required for Bollinger Bands"
-        )
-
-    middle = _simple_moving_average(window)
-    stddev = _standard_deviation(window, middle)
-    upper = middle + (sigma * stddev)
-    lower = middle - (sigma * stddev)
-    band_width = upper - lower
-    return middle, upper, lower, band_width
-
-
-def _calculate_latest_bollinger_bands(
-    closes: list[float],
-    sigma: float,
-) -> tuple[float, float, float, float]:
-    if len(closes) < BOLLINGER_PERIOD:
-        raise SignalEngineError(
-            f"At least {BOLLINGER_PERIOD} closes are required for Bollinger Bands"
-        )
-    return _calculate_bollinger_bands_from_window(closes[-BOLLINGER_PERIOD:], sigma)
-
-
-def _calculate_previous_bollinger_bands(
-    closes: list[float],
-    sigma: float,
-) -> tuple[float, float, float, float]:
-    if len(closes) < BOLLINGER_PERIOD + 1:
-        raise SignalEngineError(
-            f"At least {BOLLINGER_PERIOD + 1} closes are required for previous Bollinger Bands"
-        )
-    return _calculate_bollinger_bands_from_window(
-        closes[-(BOLLINGER_PERIOD + 1) : -1],
-        sigma,
-    )
-
-
-def _normalized_band_width(middle: float, band_width: float) -> float:
-    if middle == 0:
-        raise SignalEngineError("Middle band is zero; normalized band width undefined")
-    return band_width / middle
-
-
-def _distance_from_middle(latest_close: float, middle: float) -> float:
-    if middle == 0:
-        raise SignalEngineError("Middle band is zero; distance from middle undefined")
-    return abs(latest_close - middle) / middle
-
-
-def _calculate_recent_ma(
-    closes: list[float],
-    period: int,
-) -> float:
-    if len(closes) < period:
-        raise SignalEngineError(
-            f"At least {period} closes are required to calculate MA"
-        )
-    return _simple_moving_average(closes[-period:])
-
-
-def _calculate_past_ma(
-    closes: list[float],
-    period: int,
-    lookback: int,
-) -> float:
-    if len(closes) < period + lookback:
-        raise SignalEngineError(
-            f"At least {period + lookback} closes are required to calculate past MA"
-        )
-    end_index = len(closes) - lookback
-    start_index = end_index - period
-    window = closes[start_index:end_index]
-    return _simple_moving_average(window)
-
-
-def _normalized_slope(
-    closes: list[float],
-    period: int,
-    lookback: int,
-) -> tuple[float, float, float]:
-    current_ma = _calculate_recent_ma(closes, period)
-    past_ma = _calculate_past_ma(closes, period, lookback)
-
-    if current_ma == 0:
-        raise SignalEngineError("Current MA is zero; normalized slope undefined")
-
-    slope = current_ma - past_ma
-    normalized = slope / current_ma
-    return normalized, current_ma, past_ma
-
-
-def _is_trend_up(
-    latest_close: float,
-    trend_current_ma: float,
-    trend_slope: float,
-) -> bool:
-    if trend_slope <= TREND_SLOPE_THRESHOLD:
-        return False
-    if TREND_PRICE_POSITION_FILTER_ENABLED and latest_close < trend_current_ma:
-        return False
-    return True
-
-
-def _is_trend_down(
-    latest_close: float,
-    trend_current_ma: float,
-    trend_slope: float,
-) -> bool:
-    if trend_slope >= -TREND_SLOPE_THRESHOLD:
-        return False
-    if TREND_PRICE_POSITION_FILTER_ENABLED and latest_close > trend_current_ma:
-        return False
-    return True
-
-
-def _is_range(
-    latest_close: float,
-    middle_band: float,
-    range_slope: float,
-    normalized_band_width: float,
-) -> bool:
-    distance_from_middle = _distance_from_middle(latest_close, middle_band)
-    return (
-        abs(range_slope) <= RANGE_SLOPE_THRESHOLD
-        and normalized_band_width <= RANGE_BAND_WIDTH_THRESHOLD
-        and distance_from_middle <= RANGE_MIDDLE_DISTANCE_THRESHOLD
-    )
-
-
-def _determine_market_state(
-    latest_close: float,
-    middle_band: float,
-    trend_current_ma: float,
-    range_slope: float,
-    trend_slope: float,
-    normalized_band_width: float,
-) -> tuple[str, str, float]:
-    distance_from_middle = _distance_from_middle(latest_close, middle_band)
-
-    if _is_trend_up(latest_close, trend_current_ma, trend_slope):
-        return (
-            "trend_up",
-            (
-                f"trend_up because trend_slope={trend_slope:.6f}"
-                f" > threshold={TREND_SLOPE_THRESHOLD:.6f}"
-                f" and latest_close={latest_close} >= trend_ma={trend_current_ma}"
-            ),
-            distance_from_middle,
-        )
-
-    if _is_trend_down(latest_close, trend_current_ma, trend_slope):
-        return (
-            "trend_down",
-            (
-                f"trend_down because trend_slope={trend_slope:.6f}"
-                f" < -threshold={TREND_SLOPE_THRESHOLD:.6f}"
-                f" and latest_close={latest_close} <= trend_ma={trend_current_ma}"
-            ),
-            distance_from_middle,
-        )
-
-    if _is_range(
-        latest_close=latest_close,
-        middle_band=middle_band,
-        range_slope=range_slope,
-        normalized_band_width=normalized_band_width,
-    ):
-        return (
-            "range",
-            (
-                f"range because abs(range_slope)={abs(range_slope):.6f}"
-                f" <= threshold={RANGE_SLOPE_THRESHOLD:.6f}"
-                f" and normalized_band_width={normalized_band_width:.6f}"
-                f" <= threshold={RANGE_BAND_WIDTH_THRESHOLD:.6f}"
-                f" and distance_from_middle={distance_from_middle:.6f}"
-                f" <= threshold={RANGE_MIDDLE_DISTANCE_THRESHOLD:.6f}"
-            ),
-            distance_from_middle,
-        )
-
-    return (
-        "neutral",
-        (
-            f"neutral because no strong trend or range was confirmed"
-            f" (range_slope={range_slope:.6f}, trend_slope={trend_slope:.6f},"
-            f" normalized_band_width={normalized_band_width:.6f},"
-            f" distance_from_middle={distance_from_middle:.6f})"
-        ),
-        distance_from_middle,
-    )
-
-
-def _range_buy_confirmed(
-    previous_close: float,
-    latest_close: float,
-    previous_lower_band: float,
-    latest_lower_band: float,
-) -> bool:
-    if not RANGE_REQUIRE_REENTRY_CONFIRMATION:
-        return latest_close <= latest_lower_band
-    return previous_close < previous_lower_band and latest_close >= latest_lower_band
-
-
-def _range_sell_confirmed(
-    previous_close: float,
-    latest_close: float,
-    previous_upper_band: float,
-    latest_upper_band: float,
-) -> bool:
-    if not RANGE_REQUIRE_REENTRY_CONFIRMATION:
-        return latest_close >= latest_upper_band
-    return previous_close > previous_upper_band and latest_close <= latest_upper_band
-
-
-def _trend_buy_confirmed(
-    previous_close: float,
-    latest_close: float,
-    previous_upper_band: float,
-    latest_upper_band: float,
-) -> bool:
-    if not TREND_REQUIRE_BREAK_CONFIRMATION:
-        return latest_close >= latest_upper_band
-    return previous_close <= previous_upper_band and latest_close > latest_upper_band
-
-
-def _trend_sell_confirmed(
-    previous_close: float,
-    latest_close: float,
-    previous_lower_band: float,
-    latest_lower_band: float,
-) -> bool:
-    if not TREND_REQUIRE_BREAK_CONFIRMATION:
-        return latest_close <= latest_lower_band
-    return previous_close >= previous_lower_band and latest_close < latest_lower_band
-
-
-def _range_extreme_buy_touch_confirmed(
-    latest_low: float,
-    latest_lower_extreme_band: float,
-) -> bool:
-    return latest_low <= latest_lower_extreme_band
-
-
-def _range_extreme_sell_touch_confirmed(
-    latest_high: float,
-    latest_upper_extreme_band: float,
-) -> bool:
-    return latest_high >= latest_upper_extreme_band
-
-
-def _range_buy_failure_exit(
-    latest_close: float,
-    previous_close: float,
-    entry_price: float,
-    middle_band: float,
-    band_width: float,
-) -> bool:
-    adverse_threshold = band_width * RANGE_FAILURE_ADVERSE_MOVE_RATIO
-    adverse_move = max(0.0, entry_price - latest_close)
-    return (
-        latest_close < entry_price
-        and latest_close <= previous_close
-        and latest_close < middle_band
-        and adverse_move >= adverse_threshold
-    )
-
-
-def _range_sell_failure_exit(
-    latest_close: float,
-    previous_close: float,
-    entry_price: float,
-    middle_band: float,
-    band_width: float,
-) -> bool:
-    adverse_threshold = band_width * RANGE_FAILURE_ADVERSE_MOVE_RATIO
-    adverse_move = max(0.0, latest_close - entry_price)
-    return (
-        latest_close > entry_price
-        and latest_close >= previous_close
-        and latest_close > middle_band
-        and adverse_move >= adverse_threshold
-    )
+from mt4_bridge.strategies.bollinger_range_v4_4_params import (  # noqa: F401
+    BOLLINGER_EXTREME_SIGMA,
+    BOLLINGER_PERIOD,
+    BOLLINGER_SIGMA,
+    CLOSE_ON_OPPOSITE_TREND_STATE,
+    ENABLE_RANGE_EXTREME_TOUCH_ENTRY,
+    ENABLE_RANGE_FAILURE_EXIT,
+    EXIT_ON_RANGE_MIDDLE_BAND,
+    RANGE_BAND_WIDTH_THRESHOLD,
+    RANGE_FAILURE_ADVERSE_MOVE_RATIO,
+    RANGE_MA_PERIOD,
+    RANGE_MIDDLE_DISTANCE_THRESHOLD,
+    RANGE_REQUIRE_REENTRY_CONFIRMATION,
+    RANGE_SLOPE_LOOKBACK,
+    RANGE_SLOPE_THRESHOLD,
+    TREND_MA_PERIOD,
+    TREND_PRICE_POSITION_FILTER_ENABLED,
+    TREND_REQUIRE_BREAK_CONFIRMATION,
+    TREND_SLOPE_LOOKBACK,
+    TREND_SLOPE_THRESHOLD,
+    required_bars,
+)
+from mt4_bridge.strategies.bollinger_range_v4_4_indicators import (
+    _calculate_latest_bollinger_bands,
+    _calculate_previous_bollinger_bands,
+    _normalized_band_width,
+    _normalized_slope,
+)
+from mt4_bridge.strategies.bollinger_range_v4_4_rules import (
+    _determine_market_state,
+    _range_buy_confirmed,
+    _range_buy_failure_exit,
+    _range_extreme_buy_touch_confirmed,
+    _range_extreme_sell_touch_confirmed,
+    _range_sell_confirmed,
+    _range_sell_failure_exit,
+    _trend_buy_confirmed,
+    _trend_sell_confirmed,
+)
 
 
 def _build_signal_decision(
