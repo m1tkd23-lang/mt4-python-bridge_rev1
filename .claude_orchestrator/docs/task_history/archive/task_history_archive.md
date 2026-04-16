@@ -454,4 +454,28 @@ Only referenced when necessary.
 - 関連: docs/開発の目的本筋.md
 - 注意: Selected 3 months のファイル名解析が規則外ファイル名に対して未定義。Step2 で csv_paths を追加する際の csv_path / csv_dir との優先順位設計が未確定
 
+## TASK-0088 : Exploration GUI 複数月評価フロー導入の実装計画とdocs追記
+- [docs/low] 複数月評価フロー方針 docs を新規作成。GUI仕様3モード・2段階フロー・refine方針・対象ファイル・段階導入 Step1-3 を整理し、既存コード全文との整合性を確認済み
+- 関連: .claude_orchestrator/docs/project_core/複数月評価フロー方針.md
+- 注意: IntegratedThresholds (min_avg_pips_per_month=150) が3ヶ月評価でも妥当かは実データ検証が必要。csv_paths / csv_path / csv_dir の3フィールド共存による優先順位ロジック複雑化リスク
+
+## TASK-0089 : feature_inventory.md 複数月評価フロー機能エントリ追加 + 最適化方針_bollinger戦略.md 残課題更新
+- [docs/low] feature_inventory.md に「複数月評価フロー（CSV選択モード・2段階探索）」エントリを not_implemented で追加。最適化方針_bollinger戦略.md の残課題に CSV選択モード・csv_paths フィールド追加・refine 複数月集約ベース化の3項目を追記
+- 関連: .claude_orchestrator/docs/feature_inventory.md, .claude_orchestrator/docs/project_core/最適化方針_bollinger戦略.md
+- 注意: TASK-0088 director followup_actions の2件を反映。Step 1 実装着手前の docs 整合性確保が目的。csv_paths / csv_path / csv_dir の3フィールド共存による優先順位ロジック複雑化リスクあり
+
+## TASK-0090 : 複数月評価フロー csv_path / csv_paths / csv_dir 定義統一と BollingerLoopConfig 設計方針の確定
+- [docs/low] csv_paths > csv_dir > csv_path の優先順位ロジックを確定し、csv_paths 指定時の csv_path 自動決定ルール（csv_paths[-1] = 最新CSV）を統一。複数月評価フロー方針.md に設計セクション追加、feature_inventory.md・最適化方針_bollinger戦略.md の notes を更新
+- 関連: .claude_orchestrator/docs/project_core/複数月評価フロー方針.md, .claude_orchestrator/docs/feature_inventory.md, .claude_orchestrator/docs/project_core/最適化方針_bollinger戦略.md
+- 注意: csv_path の矛盾（最新CSV vs csv_paths の最初のファイル）を csv_paths[-1]（最新）に統一。Step 1 実装時に frozen dataclass へ csv_paths フィールドを追加する際の呼び出し元引数追加漏れリスク、csv_paths が空リスト [] の場合の IndexError ハンドリングに注意
+
+## TASK-0091 : BollingerLoopConfig / BollingerExplorationConfig に csv_paths フィールド追加と優先分岐実装
+- [feature/medium] ExplorationConfig・BollingerExplorationConfig・BollingerLoopConfig・LoopConfig の4つの Config dataclass に csv_paths: list[str] | None = None を追加。csv_paths > csv_dir > csv_path の優先順位ロジックを _resolve_csv_files ヘルパーで実装し、横断評価の CSV 解決を統一。csv_paths=[] の ValueError バリデーション、csv_paths 指定時の csv_path 自動決定（csv_paths[-1]）も実装
+- 関連: src/backtest/exploration_loop.py
+- 注意: GUI 側（main_window.py）は csv_paths を渡していないが、デフォルト None のため既存動作に影響なし。_resolve_csv_files が csv_paths 指定時にファイル存在チェックを行わない点はGUI実装時に検討。run_bollinger_exploration_loop 内の effective_csv_path 決定ロジックがループ内にあり非効率（nice_to_have）。GUI の CSV 選択モード実装は後続タスク
+
+
+
+
+
 

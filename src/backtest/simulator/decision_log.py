@@ -38,4 +38,5 @@ class DecisionLogMixin:
             has_range_position=range_position is not None,
             has_trend_position=trend_position is not None,
             has_legacy_position=legacy_position is not None,
+            range_observation=decision.debug_metrics,
         )

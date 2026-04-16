@@ -182,6 +182,8 @@ class BacktestDecisionLog:
     has_trend_position: bool
     has_legacy_position: bool
 
+    range_observation: dict[str, object] | None = None
+
 
 @dataclass(frozen=True)
 class BacktestStats:

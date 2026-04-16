@@ -1,8 +1,5 @@
-# src\mt4_bridge\strategies\bollinger_range_v4_4.py
-aaaa# src/mt4_bridge/strategies/bollinger_range_v4_4.py
+# src/mt4_bridge/strategies/bollinger_range_v4_4.py
 from __future__ import annotations
-
-import logging
 
 from mt4_bridge.models import (
     MarketSnapshot,
@@ -63,8 +60,6 @@ from mt4_bridge.strategies.bollinger_range_v4_4_rules import (
     build_range_observation,
     range_observation_to_dict,
 )
-
-logger = logging.getLogger(__name__)
 
 
 def _build_signal_decision(
@@ -560,14 +555,7 @@ def evaluate_bollinger_range_v4_4(
             trend_slope_accel_stats=trend_slope_accel_stats,
         )
         range_observation_dict = range_observation_to_dict(obs)
-    except Exception as e:
-        logger.debug(
-            "RangeObservation build failed for %s at bar_time=%s: %s: %s",
-            strategy_name,
-            latest_bar.time,
-            type(e).__name__,
-            str(e),
-        )
+    except Exception:
         range_observation_dict = None
 
     reason_suffix = (
