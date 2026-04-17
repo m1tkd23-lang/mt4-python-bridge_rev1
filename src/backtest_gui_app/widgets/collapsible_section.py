@@ -23,6 +23,7 @@ class CollapsibleSection(QWidget):
         self._toggle_button.setChecked(expanded)
         self._toggle_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self._toggle_button.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow)
+        self._toggle_button.setProperty("role", "section-header")
         self._toggle_button.clicked.connect(self._on_toggled)
 
         header_line = QFrame()

@@ -72,10 +72,9 @@ class InputPanel(QWidget):
 
     def _build_parameters_section(self) -> QWidget:
         params_box = QWidget()
-        params_layout = QGridLayout(params_box)
+        params_layout = QVBoxLayout(params_box)
         params_layout.setContentsMargins(0, 0, 0, 0)
-        params_layout.setHorizontalSpacing(12)
-        params_layout.setVerticalSpacing(6)
+        params_layout.setSpacing(8)
 
         self.symbol_edit = QLineEdit()
         self.timeframe_edit = QLineEdit()
@@ -94,26 +93,22 @@ class InputPanel(QWidget):
         )
         self.close_position_checkbox.setChecked(True)
 
-        left_form = QFormLayout()
-        left_form.setContentsMargins(0, 0, 0, 0)
-        left_form.setSpacing(6)
-        left_form.addRow("Symbol", self.symbol_edit)
-        left_form.addRow("Timeframe", self.timeframe_edit)
-        left_form.addRow("Pip size", self.pip_size_edit)
-        left_form.addRow("Intrabar policy", self.intrabar_policy_combo)
-
-        middle_form = QFormLayout()
-        middle_form.setContentsMargins(0, 0, 0, 0)
-        middle_form.setSpacing(6)
-        middle_form.addRow("SL pips", self.sl_pips_edit)
-        middle_form.addRow("TP pips", self.tp_pips_edit)
-        middle_form.addRow("Initial balance", self.initial_balance_edit)
-        middle_form.addRow("Risk %", self.risk_percent_edit)
+        market_form = QFormLayout()
+        market_form.setContentsMargins(0, 0, 0, 0)
+        market_form.setSpacing(6)
+        market_form.addRow("Symbol", self.symbol_edit)
+        market_form.addRow("Timeframe", self.timeframe_edit)
+        market_form.addRow("Pip size", self.pip_size_edit)
+        market_form.addRow("Intrabar policy", self.intrabar_policy_combo)
+        market_form.addRow("SL pips", self.sl_pips_edit)
+        market_form.addRow("TP pips", self.tp_pips_edit)
+        market_form.addRow("Initial balance", self.initial_balance_edit)
+        market_form.addRow("Risk %", self.risk_percent_edit)
 
         action_box = QWidget()
         action_layout = QVBoxLayout(action_box)
         action_layout.setContentsMargins(0, 0, 0, 0)
-        action_layout.setSpacing(8)
+        action_layout.setSpacing(6)
 
         self.run_button = QPushButton("Run backtest")
         self.run_button.setMinimumHeight(36)
@@ -122,15 +117,13 @@ class InputPanel(QWidget):
         self.export_trades_csv_button = QPushButton("Export Trades CSV")
 
         action_layout.addWidget(self.close_position_checkbox)
-        action_layout.addSpacing(4)
+        action_layout.addSpacing(2)
         action_layout.addWidget(self.run_button)
         action_layout.addWidget(self.clear_button)
         action_layout.addWidget(self.export_trades_csv_button)
-        action_layout.addStretch(1)
 
-        params_layout.addLayout(left_form, 0, 0)
-        params_layout.addLayout(middle_form, 0, 1)
-        params_layout.addWidget(action_box, 0, 2)
+        params_layout.addLayout(market_form)
+        params_layout.addWidget(action_box)
 
         return CollapsibleSection("Parameters", params_box, expanded=True)
 

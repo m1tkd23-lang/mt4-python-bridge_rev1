@@ -1,5 +1,7 @@
 # src\mt4_bridge\strategies\bollinger_range_v4_4.py
-aaaa# src/mt4_bridge/strategies/bollinger_range_v4_4.py
+
+# src/mt4_bridge/strategies/bollinger_range_v4_4.py
+
 from __future__ import annotations
 
 import logging

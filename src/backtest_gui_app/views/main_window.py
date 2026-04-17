@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMainWindow,
     QMessageBox,
+    QScrollArea,
     QSplitter,
     QTabWidget,
     QVBoxLayout,
@@ -16,6 +17,10 @@ from PySide6.QtWidgets import (
 )
 
 from backtest.csv_loader import CsvLoadError
+from backtest.mean_reversion_analysis import (
+    AllMonthsMeanReversionSummary,
+    analyze_all_months_mean_reversion,
+)
 from backtest.service import (
     AllMonthsResult,
     BacktestRunArtifacts,
@@ -30,6 +35,7 @@ from backtest_gui_app.constants import DEFAULT_DATA_DIR, DEFAULT_STRATEGIES_DIR,
 from backtest_gui_app.helpers import list_csv_paths, list_strategy_names
 from backtest_gui_app.presenters.result_presenter import BacktestResultPresenter
 from backtest_gui_app.services.run_config_builder import build_run_config
+from backtest_gui_app.styles import apply_dark_theme
 from backtest_gui_app.views.all_months_tab import AllMonthsTab
 from backtest_gui_app.views.chart_overview_tab import ChartOverviewTab
 from backtest_gui_app.views.compare_ab_tab import CompareABTab
@@ -46,7 +52,7 @@ class AllMonthsWorker(QThread):
     """Worker thread that runs backtest for each month and emits progress."""
 
     progress = Signal(int, int)  # (completed_count, total_count)
-    finished_ok = Signal(object)  # AllMonthsResult
+    finished_ok = Signal(object, object)  # (AllMonthsResult, AllMonthsMeanReversionSummary | None)
     finished_error = Signal(str)  # error message
     finished_cancelled = Signal()  # cancelled by user
 
@@ -105,7 +111,14 @@ class AllMonthsWorker(QThread):
                 strategy_params=self._strategy_params,
                 trade_log_dir=self._trade_log_dir,
             )
-            self.finished_ok.emit(result)
+            mr_summary: AllMonthsMeanReversionSummary | None
+            try:
+                mr_summary = analyze_all_months_mean_reversion(
+                    result.monthly_artifacts
+                )
+            except Exception:
+                mr_summary = None
+            self.finished_ok.emit(result, mr_summary)
         except _AllMonthsCancelled:
             self.finished_cancelled.emit()
         except Exception as exc:
@@ -217,6 +230,8 @@ class BacktestMainWindow(QMainWindow):
         self.setWindowTitle("MT4 Backtest GUI")
         self.resize(1520, 920)
 
+        apply_dark_theme(self)
+
         self._latest_artifacts: BacktestRunArtifacts | None = None
         self._syncing_trade_selection = False
         self._all_months_worker: AllMonthsWorker | None = None
@@ -228,6 +243,13 @@ class BacktestMainWindow(QMainWindow):
         self.chart_overview_tab = ChartOverviewTab()
         self.all_months_tab = AllMonthsTab()
         self.compare_ab_tab = CompareABTab()
+
+        self.input_panel.run_button.setProperty("role", "primary")
+        self.input_panel.clear_button.setProperty("role", "danger")
+        self.all_months_tab.run_all_button.setProperty("role", "primary")
+        self.all_months_tab.cancel_button.setProperty("role", "danger")
+        self.compare_ab_tab.run_button.setProperty("role", "primary")
+        self.compare_ab_tab.cancel_button.setProperty("role", "danger")
 
         self._presenter = BacktestResultPresenter(
             summary_panel=self.summary_panel,
@@ -269,41 +291,52 @@ class BacktestMainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        upper_container = self._build_upper_area()
-        lower_container = self._build_lower_area()
+        sidebar_container = self._build_sidebar_area()
+        workspace_container = self._build_workspace_area()
 
-        main_splitter = QSplitter(Qt.Vertical)
-        main_splitter.addWidget(upper_container)
-        main_splitter.addWidget(lower_container)
+        main_splitter = QSplitter(Qt.Horizontal)
+        main_splitter.addWidget(sidebar_container)
+        main_splitter.addWidget(workspace_container)
         main_splitter.setStretchFactor(0, 0)
         main_splitter.setStretchFactor(1, 1)
-        main_splitter.setSizes([300, 620])
+        main_splitter.setSizes([380, 1120])
+        main_splitter.setChildrenCollapsible(False)
 
         layout.addWidget(main_splitter)
         return page
 
-    def _build_upper_area(self) -> QWidget:
+    def _build_sidebar_area(self) -> QWidget:
         container = QWidget()
+        container.setMinimumWidth(320)
+        container.setMaximumWidth(520)
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        top_splitter = QSplitter(Qt.Horizontal)
-        top_splitter.addWidget(self.input_panel)
-        top_splitter.addWidget(self.summary_panel)
-        top_splitter.setStretchFactor(0, 3)
-        top_splitter.setStretchFactor(1, 2)
-        top_splitter.setSizes([950, 520])
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QScrollArea.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setWidget(self.input_panel)
 
-        layout.addWidget(top_splitter)
+        layout.addWidget(scroll_area)
         return container
 
-    def _build_lower_area(self) -> QWidget:
+    def _build_workspace_area(self) -> QWidget:
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
-        layout.addWidget(self.result_tabs_panel)
+
+        workspace_splitter = QSplitter(Qt.Vertical)
+        workspace_splitter.addWidget(self.summary_panel)
+        workspace_splitter.addWidget(self.result_tabs_panel)
+        workspace_splitter.setStretchFactor(0, 0)
+        workspace_splitter.setStretchFactor(1, 1)
+        workspace_splitter.setSizes([260, 660])
+        workspace_splitter.setChildrenCollapsible(False)
+
+        layout.addWidget(workspace_splitter)
         return container
 
     def _connect_signals(self) -> None:
@@ -549,17 +582,33 @@ class BacktestMainWindow(QMainWindow):
         self.all_months_tab.progress_bar.setValue(0)
         self._all_months_worker = None
 
-    def _on_all_months_finished(self, result: AllMonthsResult) -> None:
+    def _on_all_months_finished(
+        self,
+        result: AllMonthsResult,
+        mr_summary: AllMonthsMeanReversionSummary | None,
+    ) -> None:
         self._reset_all_months_ui()
 
-        self.all_months_tab.display_result(result)
-        self.input_panel.notes_text.setPlainText(
+        self.all_months_tab.display_result(result, mr_summary)
+        notes = (
             f"All months completed.\n"
             f"Months: {result.aggregate.month_count}\n"
             f"Total trades: {result.aggregate.total_trades}\n"
             f"Total pips: {result.aggregate.total_pips:.2f}\n"
             f"Win rate: {result.aggregate.overall_win_rate:.2f}%"
         )
+        if mr_summary is not None:
+            mr = mr_summary.all_period
+            rate5 = (
+                f"{mr.success_within_5_rate:.2f}%"
+                if mr.success_within_5_rate is not None
+                else "N/A"
+            )
+            notes += (
+                f"\nMR range trades: {mr.total_range_trades}\n"
+                f"MR success<=5 rate: {rate5}"
+            )
+        self.input_panel.notes_text.setPlainText(notes)
 
     def _on_all_months_error(self, message: str) -> None:
         self._reset_all_months_ui()

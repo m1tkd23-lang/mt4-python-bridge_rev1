@@ -474,6 +474,53 @@ Only referenced when necessary.
 - 関連: src/backtest/exploration_loop.py
 - 注意: GUI 側（main_window.py）は csv_paths を渡していないが、デフォルト None のため既存動作に影響なし。_resolve_csv_files が csv_paths 指定時にファイル存在チェックを行わない点はGUI実装時に検討。run_bollinger_exploration_loop 内の effective_csv_path 決定ロジックがループ内にあり非効率（nice_to_have）。GUI の CSV 選択モード実装は後続タスク
 
+## TASK-0092 : feature_inventory.md 複数月評価フロー partial 昇格 + 最適化方針_bollinger戦略.md csv_paths 残課題完了更新
+- [docs/low] feature_inventory.md の複数月評価フローエントリを not_implemented → partial に昇格し、TASK-0091 の csv_paths バックエンド実装完了を notes に追記。最適化方針_bollinger戦略.md の残課題 csv_paths 項目を完了済みに更新
+- 関連: .claude_orchestrator/docs/feature_inventory.md, .claude_orchestrator/docs/project_core/最適化方針_bollinger戦略.md
+- 注意: GUI 側の CSV 選択モード実装は未着手（後続タスク）
+
+## TASK-0093 : Exploration GUI input_panel に CSV選択モード（Selected 3 months / All CSVs / Custom）を追加し main_window で csv_paths を組み立てる
+- [feature/medium] input_panel.py に CSV選択モード（Selected 3 months / All CSVs / Custom）のRadioButton・チェックリストUIを追加し、main_window.py で選択モードに応じた csv_paths 組み立てを実装
+- 関連: src/explore_gui_app/views/input_panel.py, src/explore_gui_app/views/main_window.py
+- 注意: GUI実機動作の目視確認が未実施（import確認のみ）。CSV Dir内にCSVが大量（100+）の場合、Customモードのチェックリスト再構築が重くなる可能性あり
+
+## TASK-0094 : 2段階フロー Phase 表示と全期間確認導線の GUI 追加（複数月評価フロー Step 2）
+- [feature/medium] Phase 表示・全期間確認ボタン・Phase 2 ワーカー・月別内訳テーブル・Phase 2 結果テーブルを3 GUI ファイルに実装。exploration_loop.py 変更なし
+- 関連: src/explore_gui_app/views/main_window.py, src/explore_gui_app/views/input_panel.py, src/explore_gui_app/views/result_panel.py, .claude_orchestrator/docs/feature_inventory.md
+- 注意: GUI 実機動作の目視確認が未実施。Phase 2 ワーカーは逐次実行のため候補数 × 全 CSV 数に比例した処理時間。exploration_loop.py の TASK-0091/0093 差分が未コミット
+
+## TASK-0095 : 複数月評価フロー Step 3: Phase 1/Phase 2 結果区別表示と全期間確認結果に基づく採択判定支援 GUI 追加
+- [feature/medium] Phase 1/Phase 2 結果の verdict 別色分け表示と Phase 2 完了後の全期間集約サマリーパネル（採択判定支援）を実装し、feature_inventory.md を implemented に昇格
+- 関連: src/explore_gui_app/views/result_panel.py, src/explore_gui_app/views/main_window.py, .claude_orchestrator/docs/feature_inventory.md
+- 注意: GUI 実機動作の目視確認が未実施。採択判定ヒューリスティックの閾値は仮値。TASK-0091/0093/0094/0095 の変更が未コミット
+
+## TASK-0096 : TASK-0091/0093/0094/0095 の未コミット変更のコミット整理
+- [chore/low] TASK-0091/0093/0094/0095 の未コミット変更を3コミットに整理完了。バックエンド・GUI・docs の論理単位で分割しコミット済み。コード内容の変更なし
+- 関連: src/backtest/exploration_loop.py, src/explore_gui_app/views/input_panel.py, src/explore_gui_app/views/main_window.py, src/explore_gui_app/views/result_panel.py, .claude_orchestrator/docs/feature_inventory.md, .claude_orchestrator/docs/project_core/最適化方針_bollinger戦略.md, .claude_orchestrator/docs/project_core/複数月評価フロー方針.md, .claude_orchestrator/docs/task_history/archive/task_history_archive.md, .claude_orchestrator/docs/task_history/過去TASK作業記録.md
+- 注意: origin/main への push が未実施。GUI 実機動作の目視確認が未実施
+
+
+
+
+
+
+
+
+
+
+
+
+
+## TASK-0097 : explore_gui Phase 2 サマリーパネル実機動作確認と レイアウト崩れ修正
+- [bugfix/low] Phase 1→Phase 2 の一連フローを実機で完走させ、レイアウト崩れ・表示欠落がないことを確認。修正対象となる崩れは発見されなかった
+- 関連: none
+- 注意: Splitter 内ログパネルが Phase2 全表示時に 88px まで圧縮される点は UX 改善余地あり。bollinger_range_v4_4_tuned_a.py が untracked のまま
+
+
+
+
+
+
 
 
 

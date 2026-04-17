@@ -10,6 +10,11 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backtest.csv_loader import CsvLoadError
+from backtest.mean_reversion_analysis import (
+    AllMonthsMeanReversionSummary,
+    MeanReversionSummary,
+    analyze_all_months_mean_reversion,
+)
 from backtest.service import BacktestRunConfig, run_backtest, run_all_months, compare_ab
 from backtest.simulator import BacktestSimulationError, IntrabarFillPolicy
 
@@ -107,6 +112,12 @@ def _format_profit_factor(value: float | None) -> str:
     return f"{value:.2f}"
 
 
+def _format_optional(value: float | None, fmt: str = "{:.2f}") -> str:
+    if value is None:
+        return "N/A"
+    return fmt.format(value)
+
+
 def print_summary(artifacts) -> None:
     summary = artifacts.summary
 
@@ -169,6 +180,52 @@ def print_aggregate_summary(result) -> None:
     for entry in agg.monthly_entries:
         marker = " [DEFICIT]" if entry.total_pips < 0 else ""
         print(f"  {entry.label}: {entry.total_pips:.2f} pips{marker}")
+    print("=" * 60)
+
+
+def _print_mean_reversion_summary_block(summary: MeanReversionSummary, indent: str = "  ") -> None:
+    print(f"{indent}Total range trades: {summary.total_range_trades}")
+    print(f"{indent}Reversion success: {summary.reversion_success_count}")
+    print(f"{indent}Reversion failure: {summary.reversion_failure_count}")
+    print(f"{indent}Success rate: {_format_optional(summary.success_rate, '{:.2f}%')}")
+    print(
+        f"{indent}Success within 3/5/8/12 bars: "
+        f"{summary.success_within_3_count}/"
+        f"{summary.success_within_5_count}/"
+        f"{summary.success_within_8_count}/"
+        f"{summary.success_within_12_count}"
+    )
+    print(
+        f"{indent}Success rate within 3/5/8/12: "
+        f"{_format_optional(summary.success_within_3_rate, '{:.2f}%')}/"
+        f"{_format_optional(summary.success_within_5_rate, '{:.2f}%')}/"
+        f"{_format_optional(summary.success_within_8_rate, '{:.2f}%')}/"
+        f"{_format_optional(summary.success_within_12_rate, '{:.2f}%')}"
+    )
+    print(f"{indent}Avg bars to reversion: {_format_optional(summary.avg_bars_to_reversion)}")
+    print(f"{indent}Avg max progress ratio: {_format_optional(summary.avg_max_progress_ratio)}")
+    print(f"{indent}Avg max adverse excursion: {_format_optional(summary.avg_max_adverse_excursion)}")
+
+
+def print_all_months_mean_reversion_summary(summary: AllMonthsMeanReversionSummary) -> None:
+    print("=" * 60)
+    print("Mean reversion summary (range lane) - all period:")
+    _print_mean_reversion_summary_block(summary.all_period)
+    print()
+    print("Mean reversion summary per month:")
+    for label, monthly in summary.monthly:
+        print(f"  {label}:")
+        print(
+            "    "
+            f"trades={monthly.total_range_trades} "
+            f"success={monthly.reversion_success_count} "
+            f"fail={monthly.reversion_failure_count} "
+            f"rate={_format_optional(monthly.success_rate, '{:.2f}%')} "
+            f"within3/5/8/12={monthly.success_within_3_count}/"
+            f"{monthly.success_within_5_count}/"
+            f"{monthly.success_within_8_count}/"
+            f"{monthly.success_within_12_count}"
+        )
     print("=" * 60)
 
 
@@ -348,6 +405,10 @@ def _run_all_months(args) -> int:
 
     print()
     print_aggregate_summary(result)
+
+    mean_reversion_summary = analyze_all_months_mean_reversion(result.monthly_artifacts)
+    print()
+    print_all_months_mean_reversion_summary(mean_reversion_summary)
     return 0
 
 

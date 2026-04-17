@@ -25,6 +25,10 @@ from PySide6.QtWidgets import (
 
 from backtest.aggregate_stats import AggregateStats
 from backtest.evaluator import evaluate_cross_month, evaluate_integrated
+from backtest.mean_reversion_analysis import (
+    AllMonthsMeanReversionSummary,
+    MeanReversionSummary,
+)
 from backtest.service import AllMonthsResult
 from backtest_gui_app.widgets.time_series_chart_widget import TimeSeriesChartWidget
 
@@ -43,15 +47,18 @@ class AllMonthsTab(QWidget):
         splitter = QSplitter(Qt.Vertical)
         self.monthly_table = self._build_monthly_table()
         self.aggregate_group = self._build_aggregate_panel()
+        self.mr_group = self._build_mean_reversion_panel()
         self.cumulative_chart = TimeSeriesChartWidget()
         self.cumulative_chart.clear_chart("Cumulative Pips (all months)")
 
         splitter.addWidget(self.monthly_table)
         splitter.addWidget(self.aggregate_group)
+        splitter.addWidget(self.mr_group)
         splitter.addWidget(self.cumulative_chart)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
-        splitter.setStretchFactor(2, 2)
+        splitter.setStretchFactor(2, 1)
+        splitter.setStretchFactor(3, 2)
 
         layout.addWidget(splitter)
 
@@ -96,7 +103,7 @@ class AllMonthsTab(QWidget):
 
     def _build_monthly_table(self) -> QTableWidget:
         table = QTableWidget()
-        table.setColumnCount(9)
+        table.setColumnCount(14)
         table.setHorizontalHeaderLabels([
             "Month",
             "Trades",
@@ -107,6 +114,11 @@ class AllMonthsTab(QWidget):
             "Profit Factor",
             "Max DD Pips",
             "Avg MFE/MAE",
+            "MR Trades",
+            "MR Fail",
+            "MR Succ<=5",
+            "MR Rate<=5 %",
+            "MR Avg Bars",
         ])
         header = table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
@@ -163,19 +175,76 @@ class AllMonthsTab(QWidget):
 
         return group
 
+    def _build_mean_reversion_panel(self) -> QGroupBox:
+        group = QGroupBox("Mean Reversion (range lane, all period)")
+        grid = QGridLayout(group)
+        grid.setHorizontalSpacing(24)
+        grid.setVerticalSpacing(4)
+
+        self.mr_labels: dict[str, QLabel] = {}
+
+        fields_left = [
+            ("total_range_trades", "Total Range Trades"),
+            ("reversion_failure_count", "Reversion Fail (skip)"),
+            ("reversion_success_count", "Reversion Success"),
+            ("success_rate", "Success Rate"),
+            ("avg_bars_to_reversion", "Avg Bars to Reversion"),
+        ]
+        fields_right = [
+            ("success_within_3", "Success <=3"),
+            ("success_within_5", "Success <=5"),
+            ("success_within_8", "Success <=8"),
+            ("success_within_12", "Success <=12"),
+            ("avg_max_progress_ratio", "Avg Max Progress"),
+            ("avg_max_adverse_excursion", "Avg Max Adverse"),
+        ]
+
+        for row, (key, label_text) in enumerate(fields_left):
+            label = QLabel(label_text)
+            value_label = QLabel("-")
+            value_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            self.mr_labels[key] = value_label
+            grid.addWidget(label, row, 0)
+            grid.addWidget(value_label, row, 1)
+
+        for row, (key, label_text) in enumerate(fields_right):
+            label = QLabel(label_text)
+            value_label = QLabel("-")
+            value_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            self.mr_labels[key] = value_label
+            grid.addWidget(label, row, 2)
+            grid.addWidget(value_label, row, 3)
+
+        return group
+
     def clear_results(self) -> None:
         self.monthly_table.setRowCount(0)
         for label in self.agg_labels.values():
             label.setText("-")
+        for label in self.mr_labels.values():
+            label.setText("-")
         self.cumulative_chart.clear_chart("Cumulative Pips (all months)")
 
-    def display_result(self, result: AllMonthsResult) -> None:
-        self._populate_monthly_table(result)
+    def display_result(
+        self,
+        result: AllMonthsResult,
+        mr_summary: AllMonthsMeanReversionSummary | None = None,
+    ) -> None:
+        self._populate_monthly_table(result, mr_summary)
         self._populate_aggregate(result.aggregate)
+        self._populate_mean_reversion_panel(mr_summary)
         self._populate_cumulative_chart(result)
 
-    def _populate_monthly_table(self, result: AllMonthsResult) -> None:
+    def _populate_monthly_table(
+        self,
+        result: AllMonthsResult,
+        mr_summary: AllMonthsMeanReversionSummary | None = None,
+    ) -> None:
         artifacts_list = result.monthly_artifacts
+        mr_by_label: dict[str, MeanReversionSummary] = {}
+        if mr_summary is not None:
+            mr_by_label = {label: summary for label, summary in mr_summary.monthly}
+
         self.monthly_table.setUpdatesEnabled(False)
         try:
             self.monthly_table.clearContents()
@@ -195,6 +264,21 @@ class AllMonthsTab(QWidget):
                     else "-"
                 )
 
+                mr = mr_by_label.get(label)
+                mr_trades = str(mr.total_range_trades) if mr is not None else "N/A"
+                mr_fail = str(mr.reversion_failure_count) if mr is not None else "N/A"
+                mr_succ5 = str(mr.success_within_5_count) if mr is not None else "N/A"
+                mr_rate5 = (
+                    self._format_optional_percent(mr.success_within_5_rate)
+                    if mr is not None
+                    else "N/A"
+                )
+                mr_avg_bars = (
+                    self._format_optional_number(mr.avg_bars_to_reversion)
+                    if mr is not None
+                    else "N/A"
+                )
+
                 values = [
                     label,
                     str(stats.trades),
@@ -205,6 +289,11 @@ class AllMonthsTab(QWidget):
                     pf_text,
                     f"{stats.max_drawdown_pips:.2f}",
                     mfe_mae_text,
+                    mr_trades,
+                    mr_fail,
+                    mr_succ5,
+                    mr_rate5,
+                    mr_avg_bars,
                 ]
 
                 for col_idx, val in enumerate(values):
@@ -242,6 +331,60 @@ class AllMonthsTab(QWidget):
         integrated_eval = evaluate_integrated(agg)
         labels["integrated_verdict"].setText(integrated_eval.verdict.value.upper())
         labels["integrated_reasons"].setText("; ".join(integrated_eval.reasons) if integrated_eval.reasons else "-")
+
+    def _populate_mean_reversion_panel(
+        self,
+        mr_summary: AllMonthsMeanReversionSummary | None,
+    ) -> None:
+        if mr_summary is None:
+            for label in self.mr_labels.values():
+                label.setText("N/A")
+            return
+
+        agg = mr_summary.all_period
+        labels = self.mr_labels
+        labels["total_range_trades"].setText(str(agg.total_range_trades))
+        labels["reversion_failure_count"].setText(str(agg.reversion_failure_count))
+        labels["reversion_success_count"].setText(str(agg.reversion_success_count))
+        labels["success_rate"].setText(
+            self._format_optional_percent(agg.success_rate)
+        )
+        labels["avg_bars_to_reversion"].setText(
+            self._format_optional_number(agg.avg_bars_to_reversion)
+        )
+
+        labels["success_within_3"].setText(
+            f"{agg.success_within_3_count} "
+            f"({self._format_optional_percent(agg.success_within_3_rate)})"
+        )
+        labels["success_within_5"].setText(
+            f"{agg.success_within_5_count} "
+            f"({self._format_optional_percent(agg.success_within_5_rate)})"
+        )
+        labels["success_within_8"].setText(
+            f"{agg.success_within_8_count} "
+            f"({self._format_optional_percent(agg.success_within_8_rate)})"
+        )
+        labels["success_within_12"].setText(
+            f"{agg.success_within_12_count} "
+            f"({self._format_optional_percent(agg.success_within_12_rate)})"
+        )
+        labels["avg_max_progress_ratio"].setText(
+            self._format_optional_number(agg.avg_max_progress_ratio)
+        )
+        labels["avg_max_adverse_excursion"].setText(
+            self._format_optional_number(agg.avg_max_adverse_excursion)
+        )
+
+    def _format_optional_percent(self, value: float | None) -> str:
+        if value is None:
+            return "N/A"
+        return f"{value:.2f}%"
+
+    def _format_optional_number(self, value: float | None) -> str:
+        if value is None:
+            return "N/A"
+        return f"{value:.2f}"
 
     def _format_pf(self, gross_profit: float, gross_loss: float) -> str:
         if gross_loss == 0:

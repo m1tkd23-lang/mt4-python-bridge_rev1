@@ -5,12 +5,15 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
+from backtest_gui_app.styles import DARK_THEME_COLORS, style_matplotlib_figure
+
 
 class MatplotlibChart(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._figure = Figure(figsize=(6, 4))
         self._canvas = FigureCanvas(self._figure)
+        self._canvas.setStyleSheet(f"background-color: {DARK_THEME_COLORS['panel']};")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -29,11 +32,11 @@ class MatplotlibChart(QWidget):
     ) -> None:
         self._figure.clear()
         ax = self._figure.add_subplot(111)
-        ax.plot(x_values, y_values)
+        ax.plot(x_values, y_values, color=DARK_THEME_COLORS["accent"], linewidth=1.4)
         ax.set_title(title)
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
-        ax.grid(True)
+        style_matplotlib_figure(self._figure, axes=[ax])
         self._apply_default_layout()
         self._canvas.draw_idle()
 
@@ -41,6 +44,6 @@ class MatplotlibChart(QWidget):
         self._figure.clear()
         ax = self._figure.add_subplot(111)
         ax.set_title(title)
-        ax.grid(True)
+        style_matplotlib_figure(self._figure, axes=[ax])
         self._apply_default_layout()
         self._canvas.draw_idle()
