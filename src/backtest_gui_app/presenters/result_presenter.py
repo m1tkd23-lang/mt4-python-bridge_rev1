@@ -29,6 +29,7 @@ class BacktestResultPresenter:
     def clear_result_views(self) -> None:
         for label in self._summary_panel.summary_labels.values():
             label.setText("-")
+        self._summary_panel.mean_reversion_widget.set_summary(None)
         self._summary_panel.reasons_text.clear()
 
         self._clear_result_tabs(self._result_tabs)
@@ -151,72 +152,7 @@ class BacktestResultPresenter:
         self,
         mr_summary: MeanReversionSummary | None,
     ) -> None:
-        labels = self._summary_panel.summary_labels
-        mr_keys = (
-            "mr_total_range_trades",
-            "mr_reversion_failure_count",
-            "mr_reversion_success_count",
-            "mr_success_rate",
-            "mr_avg_bars_to_reversion",
-            "mr_success_within_3",
-            "mr_success_within_5",
-            "mr_success_within_8",
-            "mr_success_within_12",
-            "mr_avg_max_progress_ratio",
-            "mr_avg_max_adverse_excursion",
-        )
-
-        if mr_summary is None:
-            for key in mr_keys:
-                if key in labels:
-                    labels[key].setText("N/A")
-            return
-
-        labels["mr_total_range_trades"].setText(str(mr_summary.total_range_trades))
-        labels["mr_reversion_failure_count"].setText(
-            str(mr_summary.reversion_failure_count)
-        )
-        labels["mr_reversion_success_count"].setText(
-            str(mr_summary.reversion_success_count)
-        )
-        labels["mr_success_rate"].setText(
-            self._format_optional_percent(mr_summary.success_rate)
-        )
-        labels["mr_avg_bars_to_reversion"].setText(
-            self._format_optional_number(mr_summary.avg_bars_to_reversion)
-        )
-        labels["mr_success_within_3"].setText(
-            f"{mr_summary.success_within_3_count} "
-            f"({self._format_optional_percent(mr_summary.success_within_3_rate)})"
-        )
-        labels["mr_success_within_5"].setText(
-            f"{mr_summary.success_within_5_count} "
-            f"({self._format_optional_percent(mr_summary.success_within_5_rate)})"
-        )
-        labels["mr_success_within_8"].setText(
-            f"{mr_summary.success_within_8_count} "
-            f"({self._format_optional_percent(mr_summary.success_within_8_rate)})"
-        )
-        labels["mr_success_within_12"].setText(
-            f"{mr_summary.success_within_12_count} "
-            f"({self._format_optional_percent(mr_summary.success_within_12_rate)})"
-        )
-        labels["mr_avg_max_progress_ratio"].setText(
-            self._format_optional_number(mr_summary.avg_max_progress_ratio)
-        )
-        labels["mr_avg_max_adverse_excursion"].setText(
-            self._format_optional_number(mr_summary.avg_max_adverse_excursion)
-        )
-
-    def _format_optional_percent(self, value: float | None) -> str:
-        if value is None:
-            return "N/A"
-        return f"{value:.2f}%"
-
-    def _format_optional_number(self, value: float | None) -> str:
-        if value is None:
-            return "N/A"
-        return f"{value:.2f}"
+        self._summary_panel.mean_reversion_widget.set_summary(mr_summary)
 
     def _populate_reasons(self, artifacts: BacktestRunArtifacts) -> None:
         reasons = artifacts.summary.verdict_reasons
