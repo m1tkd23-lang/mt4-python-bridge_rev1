@@ -5,11 +5,7 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
-# NOTE: Style is temporarily sourced from backtest_gui_app.styles until T-E
-# (dark-theme consolidation) introduces gui_common/styles/. This creates a
-# short-term reverse dependency (gui_common -> backtest_gui_app) that is
-# documented in explore_gui主導移行マップ.md §11-4 and removed at T-E.
-from backtest_gui_app.styles import DARK_THEME_COLORS, style_matplotlib_figure
+from gui_common.styles import DARK_THEME_COLORS, style_matplotlib_figure
 
 
 class MatplotlibChart(QWidget):

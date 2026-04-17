@@ -8,10 +8,7 @@ from matplotlib import dates as mdates
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
-# NOTE: Style is temporarily sourced from backtest_gui_app.styles until T-E
-# (dark-theme consolidation) introduces gui_common/styles/. See chart_widget.py
-# for the layering note.
-from backtest_gui_app.styles import DARK_THEME_COLORS, style_matplotlib_figure
+from gui_common.styles import DARK_THEME_COLORS, style_matplotlib_figure
 
 
 class TimeSeriesChartWidget(QWidget):

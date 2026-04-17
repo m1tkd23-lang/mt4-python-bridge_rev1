@@ -36,6 +36,7 @@ from backtest.service import (
     run_backtest,
 )
 from backtest.simulator import IntrabarFillPolicy
+from backtest_gui_app.styles.dark_theme import apply_dark_theme
 from gui_common.strategy_params import get_param_specs
 from explore_gui_app.services.refinement import build_refinement_plan
 from explore_gui_app.views.analysis_panel import AnalysisPanel
@@ -280,6 +281,8 @@ class ExploreMainWindow(QMainWindow):
         self._input_panel.confirm_all_requested.connect(self._on_confirm_all)
         self._backtest_panel.run_requested.connect(self._on_backtest_run)
         self._backtest_panel.stop_requested.connect(self._on_backtest_stop)
+
+        apply_dark_theme(self)
 
     def _on_run(self) -> None:
         csv_path = self._input_panel.get_csv_path()
