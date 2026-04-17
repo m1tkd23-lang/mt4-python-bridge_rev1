@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QMainWindow,
     QMessageBox,
+    QTabWidget,
     QWidget,
 )
 
@@ -131,16 +132,24 @@ class ExploreMainWindow(QMainWindow):
         self._phase1_config: BollingerLoopConfig | None = None
         self._phase1_results: list[BollingerExplorationResult] = []
 
-        central = QWidget()
-        self.setCentralWidget(central)
-        root_layout = QHBoxLayout(central)
-
         self._input_panel = ExploreInputPanel()
         self._input_panel.setMinimumWidth(520)
-        root_layout.addWidget(self._input_panel)
-
         self._result_panel = ExploreResultPanel()
-        root_layout.addWidget(self._result_panel, 1)
+
+        self._tab_widget = QTabWidget()
+        self.setCentralWidget(self._tab_widget)
+
+        explore_tab = QWidget()
+        explore_layout = QHBoxLayout(explore_tab)
+        explore_layout.addWidget(self._input_panel)
+        explore_layout.addWidget(self._result_panel, 1)
+        self._tab_widget.addTab(explore_tab, "Explore")
+
+        self._backtest_tab = QWidget()
+        self._tab_widget.addTab(self._backtest_tab, "Backtest 単発")
+
+        self._analysis_tab = QWidget()
+        self._tab_widget.addTab(self._analysis_tab, "Analysis")
 
         self._input_panel.run_requested.connect(self._on_run)
         self._input_panel.refine_requested.connect(self._on_refine_from_trends)

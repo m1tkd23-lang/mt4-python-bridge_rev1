@@ -301,10 +301,11 @@ TASK-0130 で確定。Phase 1 は完了、Phase 2 へ着手するための実装
 
 ### 11-1. 優先度 P0（Phase 2 の主導線確立に必要）
 
-* T-A: explore_gui の トップレベル QTabWidget 化（タブ A のみ稼働、タブ B/C/D は空フレームを設置）  
+* T-A: explore_gui の トップレベル QTabWidget 化（タブ A のみ稼働、タブ B/C は placeholder、タブ D は未設置（Phase 3 帰属））  
   * 触る範囲: `explore_gui_app/views/main_window.py` のレイアウト再構成のみ。`ExploreInputPanel` / `ExploreResultPanel` は既存配置のまま タブ A に押し込める。
   * 完了条件: 既存挙動が壊れていないこと（探索 Run / Stop / Phase 2 / Refine が従来どおり動くこと）。
   * 売買ロジック・バックテスト数値変更なし。
+  * **[TASK-0132 実装済み / 2026-04-17]** `src/explore_gui_app/views/main_window.py` でトップレベル QTabWidget 化を完了。タブ構成は A: Explore / B: Backtest 単発 / C: Analysis の 3 タブで、タブ B / C は placeholder（空 QWidget）として設置。タブ D は TASK-0131 確定方針（§11-3 T-G / §12-3 / §11-4）に従い未設置（見出しの『タブ B/C/D は空フレームを設置』より TASK-0131 確定が優先され、タブ D の空フレームも配置しない）。タブ A には既存 `ExploreInputPanel` / `ExploreResultPanel` を stretch=1 の `QHBoxLayout` で収容し既存 2 ペイン構成を保持。import / タブ構成 assert / offscreen 起動 exec ret=0 / タブ切替非クラッシュまで自動検証済み。実ユーザー操作による Run / Stop / Refine / Phase 2 全通しの手動確認はコミット前に user 側で履行予定。
 * T-B: タブ C「Analysis」最小実装（Phase 2 結果に対して `analyze_all_months_mean_reversion` を表示）  
   * 触る範囲: 新規 `explore_gui_app/views/analysis_panel.py`。`backtest_gui_app/presenters/result_presenter.py` の MR 表示ロジックを参照に作る（コピー or 共通化は実装時判断）。
   * 完了条件: Phase 2 finished_ok 後にタブ C を選択すると、全月合算 MR サマリーが見える。

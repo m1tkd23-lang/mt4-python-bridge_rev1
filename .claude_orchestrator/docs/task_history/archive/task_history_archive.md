@@ -762,6 +762,65 @@ mean_reversion_analysis.py に AllMonthsMeanReversionSummary dataclass と analy
 - [carry_over] entry_time / exit_time の time_index lookup 丸め誤差で外れる場合スキップ（既知・許容）
 - [carry_over] entry_price == middle band 時の progress=0.0 固定エッジケース（既知）
 
+## TASK-0114 : runner.py / CLI 出力に AllMonthsMeanReversionSummary を組み込む（run_all_months 経路）
+
+- 実行日時: 2026-04-17 08:12
+- task_type: feature
+- risk_level: low
+
+### 変更内容
+runner.py の全月一括経路 (_run_all_months) に analyze_all_months_mean_reversion 呼び出しと AllMonthsMeanReversionSummary 表示を追加。既存 CLI...
+
+### 関連ファイル
+- src/backtest/runner.py
+
+### 注意点
+- 実データ12ヶ月 CSV (USDJPY-cd5_20250521_monthly 等) での run_all_months + MR サマリ結合 e2e 実行は未検証で、bollinger_range_v4_4_guarded など range 系戦略の skip 率・成功率分布は後続タスクで確認要。
+- analyze_all_months_mean_reversion 呼び出しが _run_all_months の既存 try/except 外に配置されており、予期しない例外で MR サマリ生成時に traceback 直出しになる可能性（reviewer 指摘の nice_to_have、後続で例外ガード検討）。
+- compare_ab 経路には MR サマリ未組み込みで、3戦略比較で range レーン評価するケースは後続タスクで別途設計要。
+- [carry_over] entry_middle_band が None の旧形式トレード / entry_time・exit_time の time_index lookup 丸め誤差 / entry_price == middle band 時の progress=0.0 固定といった既知エッジケースはスキップ許容。
+
+## TASK-0115 : backtest_gui_app の All Months タブに AllMonthsMeanReversionSummary 表示を追加する
+
+- 実行日時: 2026-04-17 08:25
+- task_type: feature
+- risk_level: medium
+
+### 変更内容
+backtest_gui_app の All Months タブに AllMonthsMeanReversionSummary 表示を接続。AllMonthsWorker で analyze_all_months_mean_reversio...
+
+### 関連ファイル
+- src/backtest_gui_app/views/main_window.py
+- src/backtest_gui_app/views/all_months_tab.py
+- .claude_orchestrator/docs/feature_inventory.md
+
+### 注意点
+- 実データ 12ヶ月 CSV (USDJPY-cd5_20250521_monthly 等) + bollinger_range_v4_4 系戦略での GUI 実機起動 → Run All Months → MR 表示 e2e は未検証（smoke は QApplication 下の panel populate のみ）
+- AllMonthsWorker.run() 内 analyze_all_months_mean_reversion の except Exception: mr_summary=None はサイレントフォールバックで logger 出力なし。MR 表示が N/A に落ちた際の原因特定が難しい
+- CompareAB タブは MR 非対応のままで、3 戦略比較で range レーン MR を評価する導線は未設計
+- carry_over: entry_middle_band None 旧形式トレード / time_index lookup 丸め誤差 / entry_price == middle band 時 progress=0.0 固定の既知エッジケース（スキップ許容）
+
+## TASK-0116 : backtest_gui_app の All Months タブ + MR 表示を USDJPY 12ヶ月 CSV 実データで GUI 実機 e2e 検証する
+
+- 実行日時: 2026-04-17 08:45
+- task_type: research
+- risk_level: low
+
+### 変更内容
+コード変更なし。検証のみ。data/USDJPY-cd5_20250521_monthly 配下の 12 ヶ月 CSV + bollinger_range_v4_4 戦略（既定 SL/TP 10pips, pip_size 0.01, Conservative intrabar, close_open_position_at_end=True, initial_balance 1,000,000, money_per_pip 100）で AllMonthsWorker の run_all_months + analyze_all_months_mean_reversion 経路を headless 再現スクリプト（TEST/task0116_headless_e2e_check.py）で実行。12 ヶ月すべて正常読込・集計 OK、mr_summary 非 None、monthly_table 5 列と全期間 MR パネルの表示文字列が AllMonthsTab._populate_* と一致、クラッシュなし、monthly 合計と all_period total_range_trades が一致（consistency 確認）。
+
+### 関連ファイル
+- TEST/task0116_headless_e2e_check.py
+- TEST/task0116_lane_check.py
+- .claude_orchestrator/docs/task_history/過去TASK作業記録.md
+
+### 注意点
+- bollinger_range_v4_4 / bollinger_range_v4_4_tuned_a は SignalDecision に entry_lane を設定しないため generic_runner 側で lane="legacy" に正規化される。結果として 12 ヶ月すべてで total_range_trades=0 となり、monthly_table MR 列は count=0 / rate=N/A / avg_bars=N/A、全期間 MR パネルも総数 0 / 割合 N/A で落ちずに描画される（range 0 件月の仕様通り）。
+- MR 表示に実データ（非ゼロ）を流すには entry_lane="range" を出力する戦略（例: bollinger_range_v4_6, bollinger_range_A 系）が必要。v4_4 系の仕様自体は MR range レーン非該当で、MR 表示を介した性能評価は別戦略 or 別タスクで行う。
+- GUI 実機起動 (QApplication 下 Run All Months ボタン → progress 応答 → キャンセル → 再実行 UI 挙動) の目視確認は auto-run で実行不能のため未実施。headless パイプライン一致確認で機能同等性まで担保しているが、UI 応答・キャンセル挙動は carry_over として残る。
+- AllMonthsWorker.run() 内 analyze_all_months_mean_reversion の except Exception: mr_summary=None サイレントフォールバックは依然残存（carry_over）。
+
+
 
 
 
