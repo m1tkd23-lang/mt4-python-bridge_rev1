@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from backtest.exploration_loop import BOLLINGER_PARAM_VARIATION_RANGES
-from backtest_gui_app.widgets.collapsible_section import CollapsibleSection
+from gui_common.widgets.collapsible_section import CollapsibleSection
 from explore_gui_app.views.parameter_dialog import ParameterDialog
 
 _AVAILABLE_STRATEGIES = [

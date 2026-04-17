@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from backtest_gui_app.views.result_tabs import ResultTabs
-from backtest_gui_app.widgets.collapsible_section import CollapsibleSection
+from gui_common.widgets.collapsible_section import CollapsibleSection
 from backtest_gui_app.widgets.linked_trade_chart_widget import LinkedTradeChartWidget
 
 

@@ -30,7 +30,7 @@ from backtest.mean_reversion_analysis import (
     MeanReversionSummary,
 )
 from backtest.service import AllMonthsResult
-from backtest_gui_app.widgets.time_series_chart_widget import TimeSeriesChartWidget
+from gui_common.widgets.time_series_chart_widget import TimeSeriesChartWidget
 
 
 class AllMonthsTab(QWidget):

@@ -37,7 +37,7 @@ from backtest_gui_app.views.chart_overview_tab import ChartOverviewTab  # noqa: 
 from backtest_gui_app.views.input_panel import InputPanel  # noqa: E402
 from backtest_gui_app.views.result_tabs import ResultTabs  # noqa: E402
 from backtest_gui_app.views.summary_panel import SummaryPanel  # noqa: E402
-from backtest_gui_app.widgets.collapsible_section import (  # noqa: E402
+from gui_common.widgets.collapsible_section import (  # noqa: E402
     CollapsibleSection,
 )
 

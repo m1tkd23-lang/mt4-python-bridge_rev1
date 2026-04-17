@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from backtest_gui_app.widgets.chart_widget import MatplotlibChart
+from gui_common.widgets.chart_widget import MatplotlibChart
 
 
 class ResultTabs(QWidget):

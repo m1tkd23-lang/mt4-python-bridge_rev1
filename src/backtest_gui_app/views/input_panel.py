@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 
 from backtest.simulator import IntrabarFillPolicy
 from gui_common.strategy_params import StrategyParamSpec, get_param_specs
-from backtest_gui_app.widgets.collapsible_section import CollapsibleSection
+from gui_common.widgets.collapsible_section import CollapsibleSection
 
 
 class InputPanel(QWidget):
