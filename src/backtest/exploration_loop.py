@@ -34,7 +34,7 @@ from backtest.evaluator import (
     evaluate_cross_month,
     evaluate_integrated,
 )
-from backtest_gui_app.services.strategy_params import (
+from gui_common.strategy_params import (
     apply_strategy_overrides,
     get_param_specs,
 )

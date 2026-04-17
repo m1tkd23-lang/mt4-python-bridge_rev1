@@ -1,4 +1,4 @@
-# src\backtest_gui_app\services\strategy_params.py
+# src\gui_common\strategy_params.py
 """Strategy-specific parameter definitions and runtime override utilities."""
 from __future__ import annotations
 

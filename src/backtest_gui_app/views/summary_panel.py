@@ -54,6 +54,25 @@ _DETAIL_FIELDS_RIGHT: list[tuple[str, str]] = [
     ("final_open_position_type", "Final open position"),
 ]
 
+# Mean-reversion supplemental analysis (range lane), shown as a separate
+# collapsible section so it does not disturb the primary summary view.
+_MEAN_REVERSION_FIELDS_LEFT: list[tuple[str, str]] = [
+    ("mr_total_range_trades", "Total range trades"),
+    ("mr_reversion_failure_count", "Reversion fail"),
+    ("mr_reversion_success_count", "Reversion success"),
+    ("mr_success_rate", "Success rate"),
+    ("mr_avg_bars_to_reversion", "Avg bars to reversion"),
+]
+
+_MEAN_REVERSION_FIELDS_RIGHT: list[tuple[str, str]] = [
+    ("mr_success_within_3", "Success <=3"),
+    ("mr_success_within_5", "Success <=5"),
+    ("mr_success_within_8", "Success <=8"),
+    ("mr_success_within_12", "Success <=12"),
+    ("mr_avg_max_progress_ratio", "Avg max progress"),
+    ("mr_avg_max_adverse_excursion", "Avg max adverse"),
+]
+
 
 class SummaryPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -67,10 +86,12 @@ class SummaryPanel(QWidget):
 
         kpi_strip = self._build_kpi_strip()
         details_section = self._build_details_section()
+        mean_reversion_section = self._build_mean_reversion_section()
         reasons_section = self._build_reasons_section()
 
         layout.addWidget(kpi_strip)
         layout.addWidget(details_section)
+        layout.addWidget(mean_reversion_section)
         layout.addWidget(reasons_section)
         layout.addStretch(1)
 
@@ -135,6 +156,20 @@ class SummaryPanel(QWidget):
             self.summary_labels[key] = value_label
             grid.addWidget(label, row, col_offset)
             grid.addWidget(value_label, row, col_offset + 1)
+
+    def _build_mean_reversion_section(self) -> QWidget:
+        box = QWidget()
+        grid = QGridLayout(box)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(3)
+
+        self._populate_detail_grid(grid, _MEAN_REVERSION_FIELDS_LEFT, col_offset=0)
+        self._populate_detail_grid(grid, _MEAN_REVERSION_FIELDS_RIGHT, col_offset=2)
+
+        return CollapsibleSection(
+            "Mean reversion (range lane)", box, expanded=False
+        )
 
     def _build_reasons_section(self) -> QWidget:
         reasons_box = QWidget()

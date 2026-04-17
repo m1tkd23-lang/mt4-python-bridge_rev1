@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from backtest.simulator import IntrabarFillPolicy
-from backtest_gui_app.services.strategy_params import StrategyParamSpec, get_param_specs
+from gui_common.strategy_params import StrategyParamSpec, get_param_specs
 from backtest_gui_app.widgets.collapsible_section import CollapsibleSection
 
 

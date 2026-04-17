@@ -6,7 +6,7 @@ from statistics import median
 from typing import Iterable
 
 from backtest.exploration_loop import BollingerExplorationResult
-from backtest_gui_app.services.strategy_params import StrategyParamSpec
+from gui_common.strategy_params import StrategyParamSpec
 
 
 @dataclass(frozen=True)

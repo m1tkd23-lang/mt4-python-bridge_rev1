@@ -7,8 +7,15 @@ from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
+import logging
+
 from backtest.aggregate_stats import AggregateStats, aggregate_monthly_stats
 from backtest.csv_loader import HistoricalBarDataset, load_historical_bars_csv
+from backtest.mean_reversion_analysis import (
+    MeanReversionSummary,
+    analyze_mean_reversion,
+    summarize_mean_reversion,
+)
 from backtest.simulator.trade_logger import write_trade_log_jsonl
 from backtest.evaluator import (
     EvaluationResult,
@@ -30,6 +37,9 @@ from backtest.view_models import (
     build_equity_points,
     build_trade_view_rows,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -61,6 +71,7 @@ class BacktestRunArtifacts:
     trade_rows: list[TradeViewRow]
     equity_points: list[EquityPoint]
     decision_log_rows: list[DecisionLogViewRow]
+    mean_reversion_summary: MeanReversionSummary | None = None
 
 
 def _build_override_context(config: BacktestRunConfig):
@@ -68,7 +79,7 @@ def _build_override_context(config: BacktestRunConfig):
     if not config.strategy_params:
         return nullcontext()
 
-    from backtest_gui_app.services.strategy_params import (
+    from gui_common.strategy_params import (
         apply_strategy_overrides,
         get_param_specs,
     )
@@ -131,6 +142,17 @@ def run_backtest(
             output_path=config.trade_log_path,
         )
 
+    mean_reversion_summary: MeanReversionSummary | None
+    try:
+        mean_reversion_summary = summarize_mean_reversion(
+            analyze_mean_reversion(result=backtest_result, dataset=dataset)
+        )
+    except Exception:
+        logger.exception(
+            "mean reversion analysis failed in run_backtest; summary set to None"
+        )
+        mean_reversion_summary = None
+
     return BacktestRunArtifacts(
         config=config,
         dataset=dataset,
@@ -140,6 +162,7 @@ def run_backtest(
         trade_rows=trade_rows,
         equity_points=equity_points,
         decision_log_rows=decision_log_rows,
+        mean_reversion_summary=mean_reversion_summary,
     )
 
 

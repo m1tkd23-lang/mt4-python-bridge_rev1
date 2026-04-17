@@ -21,7 +21,7 @@ from backtest.exploration_loop import (
     run_bollinger_exploration,
     run_bollinger_exploration_loop,
 )
-from backtest_gui_app.services.strategy_params import get_param_specs
+from gui_common.strategy_params import get_param_specs
 from explore_gui_app.services.refinement import build_refinement_plan
 from explore_gui_app.views.input_panel import ExploreInputPanel
 from explore_gui_app.views.result_panel import ExploreResultPanel

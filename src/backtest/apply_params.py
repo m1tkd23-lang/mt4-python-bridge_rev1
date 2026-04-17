@@ -42,7 +42,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from backtest_gui_app.services.strategy_params import (
+from gui_common.strategy_params import (
     StrategyParamSpec,
     get_param_specs,
 )
