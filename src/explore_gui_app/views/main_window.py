@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from pathlib import Path
+
 from backtest.exploration_loop import (
     BOLLINGER_PARAM_VARIATION_RANGES,
     BollingerExplorationConfig,
@@ -22,8 +24,14 @@ from backtest.exploration_loop import (
     run_bollinger_exploration,
     run_bollinger_exploration_loop,
 )
+from backtest.mean_reversion_analysis import (
+    MeanReversionSummary,
+    analyze_all_months_mean_reversion,
+)
+from backtest.service import BacktestRunArtifacts, BacktestRunConfig, run_backtest
 from gui_common.strategy_params import get_param_specs
 from explore_gui_app.services.refinement import build_refinement_plan
+from explore_gui_app.views.analysis_panel import AnalysisPanel
 from explore_gui_app.views.input_panel import ExploreInputPanel
 from explore_gui_app.views.result_panel import ExploreResultPanel
 
@@ -117,6 +125,57 @@ class _Phase2Worker(QThread):
             self.finished_error.emit(str(exc))
 
 
+class _MRAnalysisWorker(QThread):
+    """Compute Phase 2 full-period mean-reversion summary in a background thread.
+
+    Re-runs ``run_backtest`` for each monthly CSV using the supplied strategy
+    override params, then aggregates the records via
+    ``analyze_all_months_mean_reversion`` to produce the all-period summary.
+    """
+
+    finished_ok = Signal(object)  # MeanReversionSummary | None
+    finished_error = Signal(str)
+
+    def __init__(
+        self,
+        csv_files: list[Path],
+        base_config: BollingerLoopConfig,
+        overrides: dict[str, float],
+        parent: QThread | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._csv_files = csv_files
+        self._base_config = base_config
+        self._overrides = overrides
+
+    def run(self) -> None:
+        try:
+            cfg = self._base_config
+            monthly_artifacts: list[tuple[str, BacktestRunArtifacts]] = []
+            for csv_file in self._csv_files:
+                if self.isInterruptionRequested():
+                    return
+                run_config = BacktestRunConfig(
+                    csv_path=csv_file,
+                    strategy_name=cfg.strategy_name,
+                    symbol=cfg.symbol,
+                    timeframe=cfg.timeframe,
+                    pip_size=cfg.pip_size,
+                    sl_pips=cfg.sl_pips,
+                    tp_pips=cfg.tp_pips,
+                    intrabar_fill_policy=cfg.intrabar_fill_policy,
+                    strategy_params=self._overrides or None,
+                )
+                artifacts = run_backtest(run_config)
+                monthly_artifacts.append((csv_file.stem, artifacts))
+
+            summary = analyze_all_months_mean_reversion(monthly_artifacts)
+            self.finished_ok.emit(summary.all_period)
+        except Exception as exc:
+            logger.exception("MR analysis worker failed")
+            self.finished_error.emit(str(exc))
+
+
 class ExploreMainWindow(QMainWindow):
     """Main window for the bollinger exploration GUI."""
 
@@ -127,6 +186,7 @@ class ExploreMainWindow(QMainWindow):
 
         self._worker: _ExplorationWorker | None = None
         self._phase2_worker: _Phase2Worker | None = None
+        self._mr_analysis_worker: _MRAnalysisWorker | None = None
         self._max_iterations: int = 0
         self._current_phase: int = 0  # 0=idle, 1=Phase1, 2=Phase2
         self._phase1_config: BollingerLoopConfig | None = None
@@ -148,8 +208,8 @@ class ExploreMainWindow(QMainWindow):
         self._backtest_tab = QWidget()
         self._tab_widget.addTab(self._backtest_tab, "Backtest 単発")
 
-        self._analysis_tab = QWidget()
-        self._tab_widget.addTab(self._analysis_tab, "Analysis")
+        self._analysis_panel = AnalysisPanel()
+        self._tab_widget.addTab(self._analysis_panel, "Analysis")
 
         self._input_panel.run_requested.connect(self._on_run)
         self._input_panel.refine_requested.connect(self._on_refine_from_trends)
@@ -207,6 +267,7 @@ class ExploreMainWindow(QMainWindow):
         self._result_panel.hide_phase2_summary()
         self._result_panel.set_phase(self._current_phase)
         self._result_panel.set_status("Running...")
+        self._analysis_panel.set_summary(None)
         self._input_panel.run_button.setEnabled(False)
         self._input_panel.refine_button.setEnabled(False)
         self._input_panel.confirm_all_button.setEnabled(False)
@@ -279,6 +340,9 @@ class ExploreMainWindow(QMainWindow):
         if self._phase2_worker and self._phase2_worker.isRunning():
             self._result_panel.append_log("Phase 2 stop requested...")
             self._phase2_worker.requestInterruption()
+        if self._mr_analysis_worker and self._mr_analysis_worker.isRunning():
+            self._result_panel.append_log("MR analysis stop requested...")
+            self._mr_analysis_worker.requestInterruption()
 
     def _on_iteration_done(self, iteration: int, result: BollingerExplorationResult) -> None:
         self._result_panel.set_status(
@@ -441,7 +505,43 @@ class ExploreMainWindow(QMainWindow):
             )
             self._result_panel.show_monthly_breakdown(best)
             self._result_panel.show_phase2_summary(results)
+            self._start_mr_analysis(best)
         self._cleanup_phase2_worker()
+
+    def _start_mr_analysis(self, best: BollingerExplorationResult) -> None:
+        """Kick off full-period MR analysis for the best Phase 2 candidate."""
+        cfg = self._phase1_config
+        if cfg is None or not cfg.csv_dir:
+            return
+
+        csv_files = sorted(Path(cfg.csv_dir).glob("*.csv"))
+        if not csv_files:
+            return
+
+        self._result_panel.append_log(
+            f"Phase 2 MR analysis started for best candidate "
+            f"(overrides={best.param_overrides})"
+        )
+
+        self._mr_analysis_worker = _MRAnalysisWorker(
+            csv_files=csv_files,
+            base_config=cfg,
+            overrides=dict(best.param_overrides),
+        )
+        self._mr_analysis_worker.finished_ok.connect(self._on_mr_analysis_finished_ok)
+        self._mr_analysis_worker.finished_error.connect(
+            self._on_mr_analysis_finished_error
+        )
+        self._mr_analysis_worker.start()
+
+    def _on_mr_analysis_finished_ok(self, summary: MeanReversionSummary) -> None:
+        self._analysis_panel.set_summary(summary)
+        self._result_panel.append_log("Phase 2 MR analysis complete (Analysis tab updated)")
+        self._mr_analysis_worker = None
+
+    def _on_mr_analysis_finished_error(self, error_msg: str) -> None:
+        self._result_panel.append_log(f"Phase 2 MR analysis ERROR: {error_msg}")
+        self._mr_analysis_worker = None
 
     def _on_phase2_finished_error(self, error_msg: str) -> None:
         self._result_panel.set_status(f"Phase 2 Error: {error_msg}")
