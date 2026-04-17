@@ -516,6 +516,18 @@ Only referenced when necessary.
 - 関連: none
 - 注意: Splitter 内ログパネルが Phase2 全表示時に 88px まで圧縮される点は UX 改善余地あり。bollinger_range_v4_4_tuned_a.py が untracked のまま
 
+## TASK-0098 : bollinger_range_v4_4_tuned_a.py の untracked 状態解消（.gitignore 追加 or 正式コミット判断）
+- [chore/low] bollinger_range_v4_4_tuned_a.py は既にコミット bfdcf32 で正式追跡されており、untracked 状態は解消済み。ただし GUI (_AVAILABLE_STRATEGIES) への登録は未実施
+- 関連: none
+- 注意: tuned_a はコミット済みだがコード上どこからも参照されていない。exploration が追加バリアントを生成した場合に同様の管理課題が再発する可能性あり
+
+## TASK-0099 : explore_gui Phase 2 テーブル高さの候補数に応じた動的調整（UX 改善）
+- [feature/low] Phase 2 テーブル高さを候補数に応じて動的調整し、ログパネル最小高さ 120px を設定して過圧縮を防止
+- 関連: src/explore_gui_app/views/result_panel.py
+- 注意: ROW_HEIGHT=30px は推定値のため高DPI環境で微調整が必要になる可能性あり
+
+
+
 
 
 

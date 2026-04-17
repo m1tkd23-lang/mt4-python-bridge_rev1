@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Qt, Signal
@@ -42,6 +43,9 @@ from backtest_gui_app.views.compare_ab_tab import CompareABTab
 from backtest_gui_app.views.input_panel import InputPanel
 from backtest_gui_app.views.result_tabs import ResultTabs
 from backtest_gui_app.views.summary_panel import SummaryPanel
+
+
+logger = logging.getLogger(__name__)
 
 
 class _AllMonthsCancelled(Exception):
@@ -117,6 +121,9 @@ class AllMonthsWorker(QThread):
                     result.monthly_artifacts
                 )
             except Exception:
+                logger.exception(
+                    "analyze_all_months_mean_reversion failed; mr_summary set to None"
+                )
                 mr_summary = None
             self.finished_ok.emit(result, mr_summary)
         except _AllMonthsCancelled:
