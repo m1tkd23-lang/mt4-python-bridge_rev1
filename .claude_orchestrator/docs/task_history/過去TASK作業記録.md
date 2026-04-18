@@ -23,6 +23,8 @@ plannerが次タスクを判断するための短い知見のみを残す
   - 両 docs を同一 task で touch する場合も文言混同を避け、ファイル別に formatspec を明記すること
 - 背景: TASK-0144/0147/0150/0153/0157 の 5 世代連続で『constraint 文言 (1 行 entry 形式 / ### サブセクション不使用) と past 側実態 (詳細 ### subsection 形式) の乖離』が precedent 優先判断で許容され常態化していたため、TASK-0158 で本 docs 側に唯一正を固定した。以後の同型 follow-up 系 task はこの合意内容を出典として constraint 文言を起案する。
 
+**TASK-0159 post-verification (2026-04-19):** 本ファイル working tree 上で pre-existing に残存していた past 側 TASK-0131-0137 entry 削除状態を TASK-0156 commit (c03997e) の『TASK-0131 past 単独保持で差分収束』方針と突合した結果、削除は方針と矛盾すると判定した。working tree の削除を `git checkout HEAD -- ...過去TASK作業記録.md` で revert し、TASK-0131-0137 entry 群を past 側に単独保持のまま復元している。出典: commit c03997e (TASK-0156) / 上記 **記録フォーマット合意内容** セクション (TASK-0158 追補)。本 post-verification により、以後の作業記録締め follow-up 系 task は past 側 TASK-0131-0137 を byte-identical 前提として insertions-only で起案できる。
+
 ---
 
 ## TASK-0131 : explore_gui 統合 Phase 2 の director 事前判断タスク（Compare A/B 帰属・タブ B 重複許容・タブ D Phase 帰属の 3 点確定）
