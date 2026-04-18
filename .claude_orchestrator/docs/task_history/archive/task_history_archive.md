@@ -1317,6 +1317,42 @@ archive 単独 hygiene task として (A) TASK-0116 x2 重複 union 1 件化、(
 - git working tree 上の本 task 由来 diff (94+/137-) は task_history_archive.md 1 ファイルに局所化されているが、commit 切り出し時の他 task 由来 staged hunk 混在防止は本 task 完了条件外で commit 整理 task の責務。
 - implementer report results.TASK-0116_merge_union.attention_bullets_union が 6 と記載されているが実ファイルは 7 件で軽微な metadata 乖離あり (本 task 通過条件外、次 task 起案時に補正候補)。
 
+## TASK-0151 : commit 整理: TASK-0147/0148/0149/0150 由来の task_history_archive.md / 過去TASK作業記録.md 編集を単一 commit へ切り出し、他 task 由来 staged hunk 混在を防止
+
+- 実行日時: 2026-04-18 10:07
+- task_type: chore
+- risk_level: medium
+
+### 変更内容
+TASK-0147/0148/0149/0150 由来の docs hygiene 編集を 2 ファイル限定で単一 local commit (60497d0) に切り出し完了。commit 60497d0 は 2 files changed (273 insertions / 196 deletions) で対象が task_history_archive.md / 過去TASK作業記録.md の 2 ファイル限定、src/** / TEST/** / feature_inventory.md / completion_definition.md / explore_gui主導移行マップ.md / project_core/** / 他 docs の hunk は混在せず。commit message に TASK-0147/0148/0149/0150 が列挙され、各 task の docs hygiene 意図 (アーカイブ追記 / chronologic 整列 / 重複 union / 末尾改行 hygiene) と 2 ファイル限定 scope が明示される。push は行わず local commit に留める。
+
+### 関連ファイル
+- .claude_orchestrator/docs/task_history/archive/task_history_archive.md
+- .claude_orchestrator/docs/task_history/過去TASK作業記録.md
+
+### 注意点
+- 過去TASK作業記録.md 側の TASK-0129/0130 エントリ削除 hunk は 4 task の task.json constraints に直接列挙されていないが、TASK-0149 archive chronologic 整列の past 側対応 hygiene として同系列 commit に含めた判断を director report で許容。
+- TASK-0150 由来の carry_over (archive TASK-0129 非昇順位置 / archive 多連続空行異常 / 過去TASK作業記録.md trailing newline 欠落 / TASK-0144→TASK-0145 間 5 連続空行 / TASK-0149 エントリ ### 変更内容 末尾 truncation) は本 commit scope 外で残存し、後続単独 hygiene task (archive 側 / 過去TASK作業記録.md 側) 待ち。
+- 本 commit (60497d0) は local のみで origin/main への push 未実施。push 判断 (単独 push か後続 hygiene commit と束ねるか) は別 task / 利用者判断に委ねる。
+
+## TASK-0152 : 過去TASK作業記録.md 単独 hygiene: trailing newline 付与 + TASK-0144→TASK-0145 間 5 連続空行の 2 行統一 + TASK-0149 エントリ末尾 truncation 修復
+
+- 実行日時: 2026-04-18 22:47
+- task_type: docs
+- risk_level: low
+
+### 変更内容
+過去TASK作業記録.md の 3 点 hygiene (trailing CRLF 付与 / TASK-0144→TASK-0145 間の連続空行を 2 行空行へ統一 / TASK-0149 エントリ ### 変更内容 末尾 truncation 復元) を単独 commit (7ac5c5b) で修復。commit は 過去TASK作業記録.md 1 ファイル (+2/-8) の単独 docs commit で constraint『commit は docs only / 過去TASK作業記録.md 単独の 1 commit に限定』を厳格遵守。TASK-0149 truncation 復元は TASK-0149/inbox/director_report_v1.json approval_basis 原文を原典とし憶測補完なし。
+
+### 関連ファイル
+- .claude_orchestrator/docs/task_history/過去TASK作業記録.md
+
+### 注意点
+- task 記述『5 連続空行』と実 HEAD 計測値『8 連続空行』の乖離があり、2 行統一は constraint 許容範囲内だが広域空行統一ルールは未確定 (nice_to_have)。
+- 着手前 past 側 WIP (TASK-0131 削除 + 各 TASK 間 +1 空行 + TASK-0151 自己エントリ追記) は /tmp/past_backup_wip.md に退避済みだが OS 一時領域のため消失リスクあり。
+- archive 側 working tree に TASK-0131 アーカイブエントリ追加 (18 insertions) が残存し、past 側 TASK-0131 と duplication 懸念。archive 単独 hygiene task での方針確定待ち。
+- commit 60497d0 + 7ac5c5b は local のみで origin/main への push 未実施。push タイミング判断は別 task / 利用者委ね。
+
 ## TASK-0130 : explore_gui主導の統合アプリ設計を整理する
 
 - 実行日時: 2026-04-17 16:15
