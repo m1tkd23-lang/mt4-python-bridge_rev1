@@ -5,6 +5,24 @@ plannerが次タスクを判断するための短い知見のみを残す
 
 **記録フォーマット仕様:** 各エントリは `## TASK-XXXX : タイトル` の見出しに続き、`- 実行日時: YYYY-MM-DD HH:MM`・`- task_type: <type>`・`- risk_level: <level>` のメタ行群と、`### 変更内容`・`### 関連ファイル`・`### 注意点`（任意）の ### サブセクション群で詳細を記録する。
 
+**記録フォーマット合意内容 (TASK-0156 確定 / 作業記録締め follow-up 系 task 起案時の唯一正):**
+
+本ファイル (`.claude_orchestrator/docs/task_history/過去TASK作業記録.md`) および `.claude_orchestrator/docs/task_history/archive/task_history_archive.md` の formatspec は以下で確定済みで、以後の同型 follow-up 系 task (作業記録締め / entry 追記 / archive 行追補) の task.json constraints 起案時はこのセクションを唯一正として参照する。task.json テンプレート側 (編集禁止配下) を改訂するのではなく、constraints 本文を起案する planner / director がここを出典として参照することで、constraint 文言と実態の乖離を解消する運用。
+
+- past 側 (本ファイル) 新 formatspec:
+  - エントリ見出しは `## TASK-XXXX : タイトル` (h2) 固定
+  - 直下にメタ 3 行 `- 実行日時: YYYY-MM-DD HH:MM` / `- task_type: <type>` / `- risk_level: <level>`
+  - 本文は `### 変更内容` / `### 関連ファイル` / `### 注意点`（任意）の ### サブセクションで構成する (1 行 entry 形式ではない)
+  - entry 間は 2 連続空行区切りを基本慣行とする (TASK-0138 以降の既存 entry に準ずる)
+- archive 側 (`task_history_archive.md`) formatspec:
+  - エントリは `## TASK-XXXX : タイトル` (h2) 見出し + `- [<task_type>/<risk_level>] <1〜2 行 summary>` + `- 関連: <paths or なし>` + `- 注意: <optional>` の行形式 (1〜4 行 entry 形式 / ### サブセクション不使用)
+  - entry 間は 1 連続空行区切り / 末尾は trailing newline 1 本
+- 判断基準 (task.json constraints 文言起案時):
+  - past 側への entry 追記を指示する task では『### サブセクション形式 / entry 間 2 連続空行』を constraint 文言に含めること
+  - archive 側への summary 行追補を指示する task では『1 行 entry 形式 / entry 間 1 連続空行 / 末尾 trailing newline 維持』を constraint 文言に含めること
+  - 両 docs を同一 task で touch する場合も文言混同を避け、ファイル別に formatspec を明記すること
+- 背景: TASK-0144/0147/0150/0153/0157 の 5 世代連続で『constraint 文言 (1 行 entry 形式 / ### サブセクション不使用) と past 側実態 (詳細 ### subsection 形式) の乖離』が precedent 優先判断で許容され常態化していたため、TASK-0158 で本 docs 側に唯一正を固定した。以後の同型 follow-up 系 task はこの合意内容を出典として constraint 文言を起案する。
+
 ---
 
 ## TASK-0131 : explore_gui 統合 Phase 2 の director 事前判断タスク（Compare A/B 帰属・タブ B 重複許容・タブ D Phase 帰属の 3 点確定）
