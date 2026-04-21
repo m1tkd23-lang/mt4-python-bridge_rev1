@@ -28,6 +28,7 @@ from mt4_bridge.result_reader import (
     match_result_to_runtime_state,
 )
 from mt4_bridge.risk_manager import calculate_sl_tp
+from mt4_bridge.strategies.risk_config import resolve_lane_risk_pips
 from mt4_bridge.runtime_state import (
     RuntimeStateError,
     apply_result_to_active_command_status,
@@ -357,20 +358,31 @@ def _build_decision_with_risk(
     bid: float,
     ask: float,
     point: float,
-    sl_pips: float,
-    tp_pips: float,
 ) -> SignalDecision:
     sl_price = None
     tp_price = None
 
     if raw_decision.action in (SignalAction.BUY, SignalAction.SELL):
+        # 戦術ファイル側の SL_PIPS / TP_PIPS 定数を必須とする。
+        # 各戦術 (bollinger_range_A, bollinger_trend_B) が自前で保持し、
+        # combo 戦術は entry_lane 経由で子戦術の値を解決する。
+        strategy_sl, strategy_tp = resolve_lane_risk_pips(
+            strategy_name=raw_decision.strategy_name,
+            entry_lane=raw_decision.entry_lane,
+        )
+        if strategy_sl is None or strategy_tp is None:
+            raise SignalEngineError(
+                f"Strategy '{raw_decision.strategy_name}'"
+                f" (lane={raw_decision.entry_lane}) does not define SL_PIPS/TP_PIPS."
+                " Add them to the strategy module."
+            )
         sl_price, tp_price = calculate_sl_tp(
             action=raw_decision.action,
             bid=bid,
             ask=ask,
             point=point,
-            sl_pips=sl_pips,
-            tp_pips=tp_pips,
+            sl_pips=strategy_sl,
+            tp_pips=strategy_tp,
         )
 
     return SignalDecision(
@@ -613,14 +625,17 @@ def main(output_func: OutputFunc | None = None) -> int:
 
     decisions: list[SignalDecision] = []
     for index, raw_decision in enumerate(raw_decisions, start=1):
-        decision = _build_decision_with_risk(
-            raw_decision,
-            bid=result.market_snapshot.bid,
-            ask=result.market_snapshot.ask,
-            point=result.market_snapshot.point,
-            sl_pips=app_config.risk.sl_pips,
-            tp_pips=app_config.risk.tp_pips,
-        )
+        try:
+            decision = _build_decision_with_risk(
+                raw_decision,
+                bid=result.market_snapshot.bid,
+                ask=result.market_snapshot.ask,
+                point=result.market_snapshot.point,
+            )
+        except SignalEngineError as exc:
+            logger.exception("risk resolution failed")
+            out(f"[ERROR] Risk resolution failed: {exc}")
+            return 1
         decisions.append(decision)
 
         logger.info(

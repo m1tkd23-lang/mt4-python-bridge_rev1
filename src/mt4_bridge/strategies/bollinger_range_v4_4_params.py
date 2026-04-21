@@ -51,6 +51,10 @@ CLOSE_ON_OPPOSITE_TREND_STATE = True
 # =========================
 # レンジ回帰を狙ったポジションが失敗した時だけ早期撤退する
 # adverse_move_threshold = band_width * ratio
+# range_failure_exit は保険として有効(崩壊月を抑える役割)だが、
+# 現行 0.28 は敏感すぎて平均 -7 pips の「過敏ストップ」になる副作用あり。
+# 2026-04-21 実験で OFF にすると総 pips は微改善(+49)だが崩壊月が 1→3 に増加。
+# 次はラッパー側で環境変数から上書きして値調整を測定する。
 ENABLE_RANGE_FAILURE_EXIT = True
 RANGE_FAILURE_ADVERSE_MOVE_RATIO = 0.28
 

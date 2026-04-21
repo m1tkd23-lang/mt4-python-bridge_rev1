@@ -32,6 +32,8 @@ class BacktestSimulator(
         sl_pips: float,
         tp_pips: float,
         intrabar_fill_policy: IntrabarFillPolicy = IntrabarFillPolicy.CONSERVATIVE,
+        lane_sl_pips: dict[str, float] | None = None,
+        lane_tp_pips: dict[str, float] | None = None,
     ) -> None:
         self._strategy_name = strategy_name
         self._symbol = symbol
@@ -40,6 +42,8 @@ class BacktestSimulator(
         self._sl_pips = sl_pips
         self._tp_pips = tp_pips
         self._intrabar_fill_policy = intrabar_fill_policy
+        self._lane_sl_pips = dict(lane_sl_pips) if lane_sl_pips else None
+        self._lane_tp_pips = dict(lane_tp_pips) if lane_tp_pips else None
 
     def run(
         self,

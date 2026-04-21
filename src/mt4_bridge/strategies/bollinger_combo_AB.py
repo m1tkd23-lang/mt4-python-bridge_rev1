@@ -21,6 +21,13 @@ from mt4_bridge.strategies.bollinger_trend_B import (
 LANE_A_STRATEGY = "bollinger_range_A"
 LANE_B_STRATEGY = "bollinger_trend_B"
 
+# combo_AB 内部の lane 名 → 実体戦術名のマッピング。
+# lane 別 SL/TP 解決(resolve_lane_risk_pips)で使用する。
+LANE_STRATEGY_MAP: dict[str, str] = {
+    "range": LANE_A_STRATEGY,
+    "trend": LANE_B_STRATEGY,
+}
+
 RANGE_MAGIC_NUMBER = 44001
 TREND_MAGIC_NUMBER = 44002
 

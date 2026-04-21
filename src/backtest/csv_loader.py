@@ -131,3 +131,36 @@ def load_historical_bars_csv(path: Path) -> HistoricalBarDataset:
         digits=detected_digits,
         point=point,
     )
+
+
+def load_historical_bars_csv_multi(
+    paths: list[Path],
+) -> HistoricalBarDataset:
+    """複数の CSV ファイルを時系列連結して 1 つの HistoricalBarDataset を返す。
+
+    - 時刻が重複する行は後勝ち(ただし複数ファイル間で同一時刻の bar は通常無い)
+    - digits は全ファイル最大値、point はそれに合わせる
+    - 月跨ぎ BT でウォームアップ/強制決済の人工的不連続を排除するために使う
+    """
+    if not paths:
+        raise CsvLoadError("load_historical_bars_csv_multi requires at least one path")
+
+    all_rows: dict[datetime, HistoricalBarRow] = {}
+    detected_digits = 0
+
+    for path in paths:
+        ds = load_historical_bars_csv(path)
+        detected_digits = max(detected_digits, ds.digits)
+        for row in ds.rows:
+            all_rows[row.time] = row
+
+    merged = sorted(all_rows.values(), key=lambda item: item.time)
+    if not merged:
+        raise CsvLoadError("No historical bars loaded from provided CSV list")
+
+    point = 10 ** (-detected_digits) if detected_digits > 0 else 1.0
+    return HistoricalBarDataset(
+        rows=merged,
+        digits=detected_digits,
+        point=point,
+    )

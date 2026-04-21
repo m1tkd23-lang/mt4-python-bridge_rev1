@@ -9,6 +9,7 @@ from backtest.simulator.models import (
 )
 from mt4_bridge.models import SignalAction, SignalDecision
 from mt4_bridge.risk_manager import calculate_sl_tp
+from mt4_bridge.strategies.risk_config import resolve_lane_risk_pips
 
 
 class PositionManagerMixin:
@@ -66,13 +67,43 @@ class PositionManagerMixin:
                 f"Unsupported entry action for position creation: {decision.action}"
             )
 
+        lane_key = (decision.entry_lane or "legacy").strip().lower()
+        lane_sl_pips = getattr(self, "_lane_sl_pips", None)
+        lane_tp_pips = getattr(self, "_lane_tp_pips", None)
+
+        # Priority 1: 明示的な lane_sl_pips / lane_tp_pips 引数
+        explicit_sl = lane_sl_pips.get(lane_key) if lane_sl_pips else None
+        explicit_tp = lane_tp_pips.get(lane_key) if lane_tp_pips else None
+
+        # Priority 2: 戦術ファイル側の SL_PIPS / TP_PIPS 定数 (lane 経由で子戦術も解決)
+        strategy_sl, strategy_tp = resolve_lane_risk_pips(
+            strategy_name=self._strategy_name,
+            entry_lane=lane_key,
+        )
+
+        # Priority 3: グローバル fallback (simulator 引数の sl_pips / tp_pips)
+        effective_sl_pips = (
+            explicit_sl
+            if explicit_sl is not None
+            else strategy_sl
+            if strategy_sl is not None
+            else self._sl_pips
+        )
+        effective_tp_pips = (
+            explicit_tp
+            if explicit_tp is not None
+            else strategy_tp
+            if strategy_tp is not None
+            else self._tp_pips
+        )
+
         sl_price, tp_price = calculate_sl_tp(
             action=decision.action,
             bid=current_row.close,
             ask=current_row.close,
             point=point,
-            sl_pips=self._sl_pips,
-            tp_pips=self._tp_pips,
+            sl_pips=effective_sl_pips,
+            tp_pips=effective_tp_pips,
         )
 
         debug_metrics = decision.debug_metrics

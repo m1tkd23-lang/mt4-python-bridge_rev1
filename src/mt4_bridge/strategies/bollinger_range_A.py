@@ -12,11 +12,44 @@ from mt4_bridge.strategies.bollinger_range_v4_4 import (
     required_bars as required_bars_v4_4,
 )
 
-# A戦術は "レンジ反転" 専用と定義する。
-# v4_4 本体は trend_up / trend_down でもブレイクアウトエントリーを生成するが、
-# A戦術としてはレンジ状態のみでエントリーし、トレンド判定の相場では
-# B戦術 (bollinger_trend_B) の領域なのでA側はHOLDに矯正する。
+# ===================================================================
+# A戦術ゲーティング パラメータ (対策①〜④, 2026-04-21)
+# ===================================================================
+# 各フィルタは _ENABLED フラグで個別に有効/無効を切り替え可能。
+# 既定値は 1年分 BT で最良バランスを確認した設定。
+# 本番稼働前に再度 BT して閾値を確定させること。
+
+# --- 対策①: trend 状態でのエントリーを見送る (B戦術の領域に踏み込まない) ---
+A_SKIP_TREND_STATE_ENABLED = True
 _TREND_STATES_FOR_A_SKIP = {"trend_up", "trend_down"}
+
+# --- 対策②: レンジ崩壊兆候フィルタ (observation flag ベース) ---
+A_UNSUITABLE_FLAG_FILTER_ENABLED = True
+A_REJECT_ON_SLOPE_ACCELERATION = False  # 検証で slope_ac のみは過剰フィルタ
+A_REJECT_ON_BANDWIDTH_EXPANSION = True
+
+# --- 対策③: 時刻フィルタ (broker server hour) ---
+# ※ 現データは broker サーバー時刻 (GMT+2/+3 系, EET 想定)。
+#    ライブ稼働前に実ブローカーの実サーバー時刻との対応を確認すること。
+A_TIME_FILTER_ENABLED = True
+A_ENTRY_BANNED_HOURS = {5, 7, 13}  # 負け平均 < -1.0 pips の 3 時刻
+
+# --- 対策④: H1 コンテキストフィルタ (逆張り禁止) ---
+# 直近 60 本 (5 分足 × 60 = 5 時間 ≈ H1 ×5本) の close 変化で
+# H1 トレンドを近似し、逆方向の BB 逆張りエントリーを見送る。
+A_H1_TREND_FILTER_ENABLED = True
+A_H1_LOOKBACK_BARS = 60
+A_H1_TREND_THRESHOLD_PIPS = 15.0  # 2026-04-21 BT 比較で最良 (崩壊月数×総pips のバランス)
+A_PIP_MULTIPLIER = 100.0          # USDJPY 用 (他通貨対応時は要修正)
+
+# ===================================================================
+# リスク設定 (戦術固有の SL/TP)
+# ===================================================================
+# A戦術はレンジ反転なので SL/TP は対称の狭め。
+# これは BT / ライブ双方で戦術固有値として使われ、
+# config/app.yaml の risk.sl_pips/tp_pips はフォールバック扱い。
+SL_PIPS = 20.0
+TP_PIPS = 20.0
 
 
 def required_bars() -> int:
@@ -37,9 +70,10 @@ def evaluate_bollinger_range_A(
     action = decision.action
     reason = decision.reason
 
-    # A戦術 gating: trend 状態でのエントリー(BUY/SELL)はHOLDに矯正
+    # A戦術 gating #1 (対策①): trend 状態でのエントリー(BUY/SELL)はHOLDに矯正
     if (
-        action in (SignalAction.BUY, SignalAction.SELL)
+        A_SKIP_TREND_STATE_ENABLED
+        and action in (SignalAction.BUY, SignalAction.SELL)
         and decision.market_state in _TREND_STATES_FOR_A_SKIP
     ):
         action = SignalAction.HOLD
@@ -47,6 +81,78 @@ def evaluate_bollinger_range_A(
             f"A strategy entry suppressed because market_state={decision.market_state}"
             f" is owned by B strategy (trend-follow); original decision: {decision.reason}"
         )
+
+    # A戦術 gating #2 (対策②): range 状態でもレンジ崩壊兆候が出ていたら見送り
+    if (
+        A_UNSUITABLE_FLAG_FILTER_ENABLED
+        and action in (SignalAction.BUY, SignalAction.SELL)
+        and decision.market_state == "range"
+        and isinstance(decision.debug_metrics, dict)
+    ):
+        obs = decision.debug_metrics
+        slope_accel = bool(obs.get("range_unsuitable_flag_slope_acceleration"))
+        bw_expansion = bool(obs.get("range_unsuitable_flag_bandwidth_expansion"))
+        blocked_reasons: list[str] = []
+        if A_REJECT_ON_SLOPE_ACCELERATION and slope_accel:
+            blocked_reasons.append("slope_acceleration=True")
+        if A_REJECT_ON_BANDWIDTH_EXPANSION and bw_expansion:
+            blocked_reasons.append("bandwidth_expansion=True")
+        if blocked_reasons:
+            action = SignalAction.HOLD
+            reason = (
+                "A strategy entry suppressed because range is at risk of breaking:"
+                f" {', '.join(blocked_reasons)}; original decision: {decision.reason}"
+            )
+
+    # A戦術 gating #3 (対策③): 時刻フィルタ
+    # broker server hour で弱い時刻帯はエントリー見送り
+    if (
+        A_TIME_FILTER_ENABLED
+        and action in (SignalAction.BUY, SignalAction.SELL)
+    ):
+        latest_bar_time = decision.latest_bar_time
+        if latest_bar_time is not None and latest_bar_time.hour in A_ENTRY_BANNED_HOURS:
+            action = SignalAction.HOLD
+            reason = (
+                f"A strategy entry suppressed by time filter: broker hour "
+                f"{latest_bar_time.hour} is historically weak; "
+                f"original decision: {decision.reason}"
+            )
+
+    # A戦術 gating #4 (対策④): H1 コンテキストフィルタ(逆張り禁止)
+    # 直近 60 本 (=5時間 ≈ H1×5本) の close 変化が閾値を超えて
+    # 逆方向に流れている場合、その方向への BB 逆張りエントリーは見送る
+    if (
+        A_H1_TREND_FILTER_ENABLED
+        and action in (SignalAction.BUY, SignalAction.SELL)
+    ):
+        bars = market_snapshot.bars
+        if len(bars) >= A_H1_LOOKBACK_BARS + 1:
+            h1_mom_pips = (
+                bars[-1].close - bars[-(A_H1_LOOKBACK_BARS + 1)].close
+            ) * A_PIP_MULTIPLIER
+            if (
+                action == SignalAction.BUY
+                and h1_mom_pips < -A_H1_TREND_THRESHOLD_PIPS
+            ):
+                action = SignalAction.HOLD
+                reason = (
+                    f"A strategy BUY suppressed because H1 is in downtrend:"
+                    f" last-{A_H1_LOOKBACK_BARS}-bar mom={h1_mom_pips:.2f} pips"
+                    f" (threshold=-{A_H1_TREND_THRESHOLD_PIPS});"
+                    f" original decision: {decision.reason}"
+                )
+            elif (
+                action == SignalAction.SELL
+                and h1_mom_pips > A_H1_TREND_THRESHOLD_PIPS
+            ):
+                action = SignalAction.HOLD
+                reason = (
+                    f"A strategy SELL suppressed because H1 is in uptrend:"
+                    f" last-{A_H1_LOOKBACK_BARS}-bar mom=+{h1_mom_pips:.2f} pips"
+                    f" (threshold=+{A_H1_TREND_THRESHOLD_PIPS});"
+                    f" original decision: {decision.reason}"
+                )
 
     return SignalDecision(
         strategy_name=strategy_name,

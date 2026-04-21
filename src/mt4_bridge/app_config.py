@@ -55,12 +55,6 @@ class SignalConfig:
 
 
 @dataclass(frozen=True)
-class RiskConfig:
-    sl_pips: float
-    tp_pips: float
-
-
-@dataclass(frozen=True)
 class RuntimeConfig:
     state_file: Path
     skip_if_pending_command: bool
@@ -71,7 +65,6 @@ class AppConfig:
     bridge: BridgePathConfig
     snapshot: SnapshotConfig
     signal: SignalConfig
-    risk: RiskConfig
     runtime: RuntimeConfig
 
 
@@ -211,7 +204,6 @@ def load_app_config(
     bridge_raw = _require_mapping(raw, "bridge")
     snapshot_raw = _require_mapping(raw, "snapshot")
     signal_raw = _require_mapping(raw, "signal")
-    risk_raw = _require_mapping(raw, "risk")
     runtime_raw = _require_mapping(raw, "runtime")
 
     default_bridge_root = str(bridge_raw.get("root", "")).strip()
@@ -247,15 +239,6 @@ def load_app_config(
         str(signal_raw.get("strategy_name", "close_compare_v1")),
     ).strip()
 
-    sl_pips_raw = _env_or_default(
-        "MT4_SL_PIPS",
-        str(risk_raw.get("sl_pips", 10)),
-    )
-    tp_pips_raw = _env_or_default(
-        "MT4_TP_PIPS",
-        str(risk_raw.get("tp_pips", 10)),
-    )
-
     default_state_file = str(runtime_raw.get("state_file", "runtime/state.json")).strip()
     state_file_raw = _env_or_default("MT4_RUNTIME_STATE_FILE", default_state_file)
 
@@ -268,8 +251,6 @@ def load_app_config(
         market_stale_seconds = int(market_stale_seconds_raw)
         runtime_stale_seconds = int(runtime_stale_seconds_raw)
         signal_enabled = _parse_bool(signal_enabled_raw)
-        sl_pips = float(sl_pips_raw)
-        tp_pips = float(tp_pips_raw)
         skip_if_pending_command = _parse_bool(skip_if_pending_command_raw)
     except ValueError as exc:
         raise AppConfigError("Invalid numeric config value") from exc
@@ -293,10 +274,6 @@ def load_app_config(
         signal=SignalConfig(
             enabled=signal_enabled,
             strategy_name=signal_strategy_name,
-        ),
-        risk=RiskConfig(
-            sl_pips=sl_pips,
-            tp_pips=tp_pips,
         ),
         runtime=RuntimeConfig(
             state_file=state_file,

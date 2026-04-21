@@ -10,7 +10,11 @@ from pathlib import Path
 import logging
 
 from backtest.aggregate_stats import AggregateStats, aggregate_monthly_stats
-from backtest.csv_loader import HistoricalBarDataset, load_historical_bars_csv
+from backtest.csv_loader import (
+    HistoricalBarDataset,
+    load_historical_bars_csv,
+    load_historical_bars_csv_multi,
+)
 from backtest.mean_reversion_analysis import (
     MeanReversionSummary,
     analyze_mean_reversion,
@@ -188,10 +192,36 @@ def run_all_months(
     progress_callback: Callable[[int, int], None] | None = None,
     strategy_params: dict[str, float] | None = None,
     trade_log_dir: Path | None = None,
+    connected: bool = False,
 ) -> AllMonthsResult:
+    """複数 CSV を全月 BT する。
+
+    connected=False (default): 月ごと独立 BT。後方互換挙動。
+    connected=True: 全 CSV を時系列連結して 1 本の BT を実行し、trade.entry_time
+      で月別に後処理集計。月跨ぎの強制決済/ウォームアップ不連続を排除する。
+    """
     csv_files = sorted(csv_dir.glob("*.csv"))
     if not csv_files:
         raise ValueError(f"No CSV files found in directory: {csv_dir}")
+
+    if connected:
+        return _run_connected(
+            csv_files=csv_files,
+            strategy_name=strategy_name,
+            symbol=symbol,
+            timeframe=timeframe,
+            pip_size=pip_size,
+            sl_pips=sl_pips,
+            tp_pips=tp_pips,
+            intrabar_fill_policy=intrabar_fill_policy,
+            close_open_position_at_end=close_open_position_at_end,
+            initial_balance=initial_balance,
+            money_per_pip=money_per_pip,
+            thresholds=thresholds,
+            progress_callback=progress_callback,
+            strategy_params=strategy_params,
+            trade_log_dir=trade_log_dir,
+        )
 
     total = len(csv_files)
     monthly_artifacts: list[tuple[str, BacktestRunArtifacts]] = []
@@ -231,6 +261,181 @@ def run_all_months(
         monthly_artifacts=monthly_artifacts,
         aggregate=aggregate,
     )
+
+
+def _run_connected(
+    *,
+    csv_files: list[Path],
+    strategy_name: str,
+    symbol: str,
+    timeframe: str,
+    pip_size: float,
+    sl_pips: float,
+    tp_pips: float,
+    intrabar_fill_policy: IntrabarFillPolicy,
+    close_open_position_at_end: bool,
+    initial_balance: float,
+    money_per_pip: float,
+    thresholds: EvaluationThresholds | None,
+    progress_callback: Callable[[int, int], None] | None,
+    strategy_params: dict[str, float] | None,
+    trade_log_dir: Path | None,
+) -> AllMonthsResult:
+    """全 CSV を結合して 1 回の BT を走らせ、trade.entry_time で月別集計する。"""
+    dataset = load_historical_bars_csv_multi(csv_files)
+
+    simulator = BacktestSimulator(
+        strategy_name=strategy_name,
+        symbol=symbol,
+        timeframe=timeframe,
+        pip_size=pip_size,
+        sl_pips=sl_pips,
+        tp_pips=tp_pips,
+        intrabar_fill_policy=intrabar_fill_policy,
+    )
+
+    override_ctx = _build_override_context(
+        BacktestRunConfig(
+            csv_path=csv_files[0],
+            strategy_name=strategy_name,
+            strategy_params=strategy_params,
+        )
+    )
+    with override_ctx:
+        backtest_result = simulator.run(
+            dataset=dataset,
+            close_open_position_at_end=close_open_position_at_end,
+        )
+
+    # 月別集計: trades を entry_time.year-month でバケット分け
+    monthly_stats_list = _split_result_by_month(
+        backtest_result=backtest_result,
+        csv_files=csv_files,
+        pip_size=pip_size,
+        sl_pips=sl_pips,
+        tp_pips=tp_pips,
+    )
+    aggregate = aggregate_monthly_stats(monthly_stats_list)
+
+    # 全期間 1 つの artifact を作る(連結 BT 結果そのもの)
+    evaluation = evaluate_backtest_with_log_guard(
+        result=backtest_result,
+        thresholds=thresholds,
+    )
+    trade_rows = build_trade_view_rows(
+        trades=backtest_result.trades,
+        initial_balance=initial_balance,
+        money_per_pip=money_per_pip,
+    )
+    equity_points = build_equity_points(trade_rows=trade_rows)
+    decision_log_rows = build_decision_log_view_rows(
+        decision_logs=backtest_result.decision_logs
+    )
+    summary = build_display_summary(
+        stats=backtest_result.stats,
+        evaluation=evaluation,
+        initial_balance=initial_balance,
+        money_per_pip=money_per_pip,
+        trade_rows=trade_rows,
+    )
+    connected_config = BacktestRunConfig(
+        csv_path=csv_files[0],
+        strategy_name=strategy_name,
+        symbol=symbol,
+        timeframe=timeframe,
+        pip_size=pip_size,
+        sl_pips=sl_pips,
+        tp_pips=tp_pips,
+        intrabar_fill_policy=intrabar_fill_policy,
+        close_open_position_at_end=close_open_position_at_end,
+        initial_balance=initial_balance,
+        money_per_pip=money_per_pip,
+        strategy_params=strategy_params,
+    )
+    connected_artifacts = BacktestRunArtifacts(
+        config=connected_config,
+        dataset=dataset,
+        backtest_result=backtest_result,
+        evaluation=evaluation,
+        summary=summary,
+        trade_rows=trade_rows,
+        equity_points=equity_points,
+        decision_log_rows=decision_log_rows,
+    )
+
+    if progress_callback is not None:
+        progress_callback(len(csv_files), len(csv_files))
+
+    if trade_log_dir is not None:
+        write_trade_log_jsonl(
+            result=backtest_result,
+            strategy_name=strategy_name,
+            output_path=trade_log_dir / "connected.jsonl",
+        )
+
+    return AllMonthsResult(
+        monthly_artifacts=[("connected", connected_artifacts)],
+        aggregate=aggregate,
+    )
+
+
+def _split_result_by_month(
+    *,
+    backtest_result: BacktestResult,
+    csv_files: list[Path],
+    pip_size: float,
+    sl_pips: float,
+    tp_pips: float,
+) -> list[tuple[str, object]]:
+    """連結 BT の trades を entry_time で月別にバケット分けし、簡易 BacktestStats を構築。"""
+    from collections import defaultdict
+    from backtest.simulator import BacktestStats
+
+    buckets: dict[str, list] = defaultdict(list)
+    for trade in backtest_result.trades:
+        key = f"{trade.entry_time.year:04d}-{trade.entry_time.month:02d}"
+        buckets[key].append(trade)
+
+    result: list[tuple[str, BacktestStats]] = []
+    base = backtest_result.stats
+    for key in sorted(buckets.keys()):
+        trades = buckets[key]
+        total_pips = sum(t.pips for t in trades)
+        wins = sum(1 for t in trades if t.pips > 0)
+        losses = sum(1 for t in trades if t.pips < 0)
+        count = len(trades)
+        gross_profit = sum(t.pips for t in trades if t.pips > 0)
+        gross_loss = sum(t.pips for t in trades if t.pips < 0)
+        win_rate = (wins / count) if count > 0 else 0.0
+        avg_pips = (total_pips / count) if count > 0 else 0.0
+        avg_win = (gross_profit / wins) if wins > 0 else 0.0
+        avg_loss = (gross_loss / losses) if losses > 0 else 0.0
+        pf = (gross_profit / abs(gross_loss)) if gross_loss < 0 else None
+        stats = BacktestStats(
+            strategy_name=base.strategy_name,
+            symbol=base.symbol,
+            timeframe=base.timeframe,
+            intrabar_fill_policy=base.intrabar_fill_policy,
+            sl_pips=sl_pips,
+            tp_pips=tp_pips,
+            total_bars=0,
+            processed_bars=0,
+            trades=count,
+            wins=wins,
+            losses=losses,
+            win_rate=win_rate,
+            total_pips=total_pips,
+            average_pips=avg_pips,
+            average_win_pips=avg_win,
+            average_loss_pips=avg_loss,
+            profit_factor=pf,
+            max_drawdown_pips=0.0,
+            gross_profit_pips=gross_profit,
+            gross_loss_pips=gross_loss,
+            final_open_position_type=None,
+        )
+        result.append((key, stats))
+    return result
 
 
 def _resolve_lane_strategies(combo_strategy_name: str) -> tuple[str, str]:

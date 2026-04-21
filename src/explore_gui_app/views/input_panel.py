@@ -31,7 +31,9 @@ from explore_gui_app.views.parameter_dialog import ParameterDialog
 _AVAILABLE_STRATEGIES = [
     "bollinger_range_v4_4",
     "bollinger_range_v4_4_tuned_a",
+    "bollinger_range_A",
     "bollinger_trend_B",
+    "bollinger_combo_AB",
 ]
 
 class ArrowButton(QPushButton):

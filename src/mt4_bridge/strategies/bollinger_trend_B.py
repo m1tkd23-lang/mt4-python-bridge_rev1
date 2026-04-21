@@ -13,13 +13,21 @@ from mt4_bridge.models import (
 from mt4_bridge.signal_exceptions import SignalEngineError
 
 from mt4_bridge.strategies.bollinger_trend_B_params import (  # noqa: F401
+    B_ENTRY_BANNED_HOURS,
+    B_H1_LOOKBACK_BARS,
+    B_H1_TREND_FILTER_ENABLED,
+    B_H1_TREND_THRESHOLD_PIPS,
+    B_PIP_MULTIPLIER,
+    B_TIME_FILTER_ENABLED,
     BOLLINGER_PERIOD,
     BOLLINGER_SIGMA,
     CLOSE_ON_OPPOSITE_TREND_STATE,
     ENTRY_SIGMA_NORMAL,
     ENTRY_SIGMA_STRONG,
     EXIT_SIGMA,
+    SL_PIPS,
     STRONG_TREND_SLOPE_THRESHOLD,
+    TP_PIPS,
     TREND_MA_PERIOD,
     TREND_MAGIC_NUMBER,
     TREND_PRICE_POSITION_FILTER_ENABLED,
@@ -259,7 +267,86 @@ def _build_analysis_context(
     )
 
 
+def _apply_b_filters(
+    decision: SignalDecision,
+    market_snapshot: MarketSnapshot,
+) -> SignalDecision:
+    """エントリー(BUY/SELL)に対して B戦術のゲーティングを適用する。
+
+    逆張り禁止(H1 コンテキスト) と時刻フィルタ。
+    existing positions のクローズ決定 (CLOSE/HOLD) は干渉しない。
+    """
+    from dataclasses import replace
+
+    if decision.action not in (SignalAction.BUY, SignalAction.SELL):
+        return decision
+
+    new_action = decision.action
+    new_reason = decision.reason
+
+    # 修正2: H1 コンテキストフィルタ
+    # 直近 60本 (=5時間) の close 変化で H1 トレンドを近似し、
+    # 順張り(H1 と同方向)でない場合はエントリー見送り
+    if B_H1_TREND_FILTER_ENABLED:
+        bars = market_snapshot.bars
+        if len(bars) >= B_H1_LOOKBACK_BARS + 1:
+            h1_mom_pips = (
+                bars[-1].close - bars[-(B_H1_LOOKBACK_BARS + 1)].close
+            ) * B_PIP_MULTIPLIER
+            if (
+                new_action == SignalAction.BUY
+                and h1_mom_pips < B_H1_TREND_THRESHOLD_PIPS
+            ):
+                new_action = SignalAction.HOLD
+                new_reason = (
+                    f"B strategy BUY suppressed because H1 is not uptrending:"
+                    f" last-{B_H1_LOOKBACK_BARS}-bar mom={h1_mom_pips:.2f} pips"
+                    f" (threshold=+{B_H1_TREND_THRESHOLD_PIPS});"
+                    f" original decision: {decision.reason}"
+                )
+            elif (
+                new_action == SignalAction.SELL
+                and h1_mom_pips > -B_H1_TREND_THRESHOLD_PIPS
+            ):
+                new_action = SignalAction.HOLD
+                new_reason = (
+                    f"B strategy SELL suppressed because H1 is not downtrending:"
+                    f" last-{B_H1_LOOKBACK_BARS}-bar mom={h1_mom_pips:.2f} pips"
+                    f" (threshold=-{B_H1_TREND_THRESHOLD_PIPS});"
+                    f" original decision: {decision.reason}"
+                )
+
+    # 修正3: 時刻フィルタ (A戦術と同一の banned hours)
+    if (
+        B_TIME_FILTER_ENABLED
+        and new_action in (SignalAction.BUY, SignalAction.SELL)
+    ):
+        latest_bar_time = decision.latest_bar_time
+        if latest_bar_time is not None and latest_bar_time.hour in B_ENTRY_BANNED_HOURS:
+            new_action = SignalAction.HOLD
+            new_reason = (
+                f"B strategy entry suppressed by time filter: broker hour "
+                f"{latest_bar_time.hour} is historically weak; "
+                f"original decision: {decision.reason}"
+            )
+
+    if new_action == decision.action:
+        return decision
+    return replace(decision, action=new_action, reason=new_reason)
+
+
 def evaluate_bollinger_trend_B(
+    market_snapshot: MarketSnapshot,
+    position_snapshot: PositionSnapshot,
+    strategy_name: str = "bollinger_trend_B",
+) -> SignalDecision:
+    decision = _evaluate_bollinger_trend_B_core(
+        market_snapshot, position_snapshot, strategy_name
+    )
+    return _apply_b_filters(decision, market_snapshot)
+
+
+def _evaluate_bollinger_trend_B_core(
     market_snapshot: MarketSnapshot,
     position_snapshot: PositionSnapshot,
     strategy_name: str = "bollinger_trend_B",

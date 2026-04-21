@@ -13,9 +13,11 @@ signal:
   enabled: true
   strategy_name: "bollinger_combo_AB"
 
-risk:
-  sl_pips: 10
-  tp_pips: 30
+# Note: SL/TP は戦術ファイル側で定義する (各戦術の SL_PIPS / TP_PIPS)
+# - bollinger_range_A: SL=20 / TP=20
+# - bollinger_trend_B: SL=20 / TP=40
+# - bollinger_combo_AB: lane 別に子戦術 (range=A, trend=B) の値を使用
+# config/app.yaml には risk セクションを置かない。
 
 runtime:
   state_file: "runtime/state.json"

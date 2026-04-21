@@ -440,6 +440,13 @@ BOLLINGER_PARAM_VARIATION_RANGES: dict[str, dict[str, tuple[float, float, float]
         "mt4_bridge.strategies.bollinger_range_v4_4::RANGE_BAND_WIDTH_THRESHOLD": (0.001, 0.006, 0.0005),
         "mt4_bridge.strategies.bollinger_range_v4_4::RANGE_MIDDLE_DISTANCE_THRESHOLD": (0.001, 0.004, 0.0005),
     },
+    "bollinger_range_A": {
+        "mt4_bridge.strategies.bollinger_range_v4_4::BOLLINGER_PERIOD": (10, 40, 5),
+        "mt4_bridge.strategies.bollinger_range_v4_4::BOLLINGER_SIGMA": (1.5, 3.0, 0.25),
+        "mt4_bridge.strategies.bollinger_range_v4_4::RANGE_SLOPE_THRESHOLD": (0.0002, 0.001, 0.0001),
+        "mt4_bridge.strategies.bollinger_range_v4_4::RANGE_BAND_WIDTH_THRESHOLD": (0.001, 0.006, 0.0005),
+        "mt4_bridge.strategies.bollinger_range_v4_4::RANGE_MIDDLE_DISTANCE_THRESHOLD": (0.001, 0.004, 0.0005),
+    },
     "bollinger_trend_B": {
         "mt4_bridge.strategies.bollinger_trend_B::BOLLINGER_PERIOD": (10, 40, 5),
         "mt4_bridge.strategies.bollinger_trend_B::BOLLINGER_SIGMA": (1.5, 3.0, 0.25),
