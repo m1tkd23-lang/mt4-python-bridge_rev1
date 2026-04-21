@@ -6,5 +6,9 @@ pyyaml>=6.0
 PySide6>=6.7
 matplotlib>=3.8
 
-# build (exe 化時のみ必要。詳細は BUILD.txt)
+# build
 pyinstaller>=6.0
+
+# historical data (Dukascopy 過去データ取得用)
+dukascopy-python>=5.0
+pandas>=2.0

@@ -36,6 +36,9 @@ class ExploreResultPanel(QWidget):
     _DISCARD_COLOR = "#FF7B72"
     _DEFAULT_TEXT_COLOR = "#E0E3EB"
 
+    # 月別 breakdown の崩壊月判定閾値 (本筋 §3.2 基準)
+    _CRASH_PIPS_THRESHOLD = -30.0
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
@@ -296,7 +299,11 @@ class ExploreResultPanel(QWidget):
     # ------------------------------------------------------------------
 
     def show_monthly_breakdown(self, result: BollingerExplorationResult) -> None:
-        """Show monthly pips breakdown from aggregate_stats."""
+        """Show monthly pips breakdown from aggregate_stats.
+
+        崩壊月 (pips < -30) を赤でハイライト、負の軽微月を黄、正を緑寄りの
+        デフォルト色で出す。本筋 §3.2 の「月別崩壊ゼロ」基準を目視で判別しやすくする。
+        """
         self._monthly_table.setRowCount(0)
         if result.aggregate_stats is None:
             return
@@ -306,14 +313,28 @@ class ExploreResultPanel(QWidget):
             row = self._monthly_table.rowCount()
             self._monthly_table.insertRow(row)
 
+            color = self._monthly_pips_color(entry.total_pips)
+
             month_item = QTableWidgetItem(entry.label)
-            month_item.setForeground(QColor(self._DEFAULT_TEXT_COLOR))
+            month_item.setForeground(color)
             self._monthly_table.setItem(row, 0, month_item)
 
             pips_item = QTableWidgetItem(f"{entry.total_pips:.1f}")
             pips_item.setTextAlignment(Qt.AlignCenter)
-            pips_item.setForeground(QColor(self._DEFAULT_TEXT_COLOR))
+            pips_item.setForeground(color)
             self._monthly_table.setItem(row, 1, pips_item)
+
+    def _monthly_pips_color(self, pips: float) -> QColor:
+        """月別 pips 値から表示色を決める。
+        - pips < -30 (崩壊月): 赤 (_DISCARD_COLOR)
+        - -30 <= pips < 0   : 黄 (_IMPROVE_COLOR)
+        - pips >= 0          : 緑 (_ADOPT_COLOR)
+        """
+        if pips < self._CRASH_PIPS_THRESHOLD:
+            return QColor(self._DISCARD_COLOR)
+        if pips < 0:
+            return QColor(self._IMPROVE_COLOR)
+        return QColor(self._ADOPT_COLOR)
 
     # ------------------------------------------------------------------
     # Phase 2 results

@@ -1,11 +1,65 @@
 # セッション引継ぎ (session_handover)
 
-最終更新日: 2026-04-21 (v3)
+最終更新日: 2026-04-21 (v4)
 
 ## この文書の役割
 
 進行中の開発セッションを、別セッション／別の作業者が即座に引き継げるようにする。
 「今どこまでやったか」「次に何をするか」「何が未解決か」を最小限の情報量で記録する。
+
+---
+
+## 今セッション v4 (2026-04-21) の追加到達点 — GUI 機能改善・Chart タブ追加・exe 化準備
+
+### 大きな成果
+
+- **explore_gui の Backtest 単発タブが Explore 未実行でも使えるように**: Strategy コンボ + CSV 手動指定 + 進捗バーで独立動作
+- **連結 BT が GUI から選択可能**: `run_all_months(connected=True)` のチェックボックスを BT タブに追加
+- **Chart タブ新設**: BT 結果の Trades + チャートをモードレスのポップアップで 1 画面表示、Table 選択 → 該当 trade にズーム & ハイライト(x/y 両方拡大)
+- **Trades table を「コア 11 + 詳細 22」に再構成**: pips 色分け / 崩壊ハイライト / Lane・Position・Pips フィルタ
+- **共通 widget 化**: `gui_common/widgets/linked_trade_chart_widget.py` と `trades_table_widget.py` で explore_gui / backtest_gui / 将来の ChartPopup が共有
+- **本番環境クローン準備**: `.gitignore` に runtime/ analysis/out/ memo 追加、`requirements.txt` に pyinstaller 追加、`BUILD.txt` で `mt4-watch-gui.spec` ベースの exe 化手順を文書化
+- **config/app.yaml の `risk:` セクション削除**: SL/TP は戦術ファイル側が正本(ライブ経路が `resolve_lane_risk_pips` 経由で決定)
+- **デモ口座 broker time 確認済**: MT4 サーバー時刻 = UTC+3 (EEST, 夏時間中)、CSV データと一致、A `{5,7,13}` / B `{4,8,10}` はそのまま有効
+
+### GUI 構造変更
+
+1. **新規共通 widget (gui_common/widgets/)**
+   - `linked_trade_chart_widget.py`: ローソク+累積 pips 連動、dark theme 配色、lane 別マーカー(range=青紫 / trend=緑橙)、描画間引き(可視本数 >= 2000 で close 折れ線に自動切替)、`reset_zoom()`、state 背景 ON/OFF 切替、`highlight_trade()` で x/y 両軸の自動フィット(padding 12%)
+   - `trades_table_widget.py`: 33 列(コア 11 / 詳細 22)、詳細は default hidden、pips 色分け(正緑/負赤/崩壊-20 以下背景赤)、Lane / Position / Pips(Win/Loss/Crash) の 3 フィルタ、`trade_selected` シグナル
+
+2. **新規 explore_gui ビュー**
+   - `chart_popup_window.py` (QDialog モードレス): 全期間表示、Reset zoom / Clear highlight / State background トグル、close イベントで親タブに通知
+   - `chart_tab.py`: Strategy / CSV / Trades 件数表示 + Open/Close ボタン + TradesTableWidget。**同時 1 枚ガード**(2度目 open は既存 raise、BT 再実行時は既存 close して新 artifacts で再生成)、テーブル選択で popup 自動 open & focus
+
+3. **Backtest 単発タブの改修**
+   - Strategy コンボを追加(`AVAILABLE_STRATEGIES` を `explore_gui_app/constants.py` に切り出して input_panel と共有)
+   - 戦術定数 SL/TP の read-only ラベル表示(combo 戦術は lane 別に表示)
+   - All months モード時に「Connect CSVs before backtest」チェックボックス
+   - 進捗バー(Single/connected は indeterminate marquee、月独立は `i/12` 定量表示)
+   - レイアウト改修: 上段 3 カラム横並び (candidate/source/market) + 下段 Splitter (details/notes)
+
+4. **main_window 配線**
+   - `_BacktestWorker` に `progress_signal` 追加、`run_all_months(progress_callback=...)` に接続
+   - `_on_backtest_finished_single` / `_on_backtest_finished_all_months` で `self._chart_tab.set_artifacts(...)` を呼ぶ
+
+### 最終 GUI タブ構成
+
+```
+ExploreMainWindow
+├── Explore        (Phase 1/2 探索)
+├── Backtest 単発  (候補検証 + 連結 BT + 進捗バー)
+├── Chart          (新) Trades table + Open chart button
+└── Analysis       (Phase 2 mean-reversion summary)
+```
+
+Chart window(モードレス、1 枚ガード)は別ウィンドウで開く。
+
+### 検証
+
+- pytest 15 passed(全フェーズで維持)
+- smoke test: 各 widget 単体 import/instantiate OK、タブ構成 `['Explore', 'Backtest 単発', 'Chart', 'Analysis']` 確認
+- デモ口座稼働: state.json の時刻から UTC+3 を確認、signal 評価は走行中(HOLD 期間)
 
 ---
 
@@ -156,6 +210,96 @@ combo_AB 月別: 2025-06 (-18.4) 以外全月プラス、最強 2026-03 (+286.9)
 
 ---
 
+## 戦略レビュー — 2026-04-21 v4 時点の率直な評価
+
+**結論を先に**: 「崩壊月ゼロ / +1043 pips / 12ヶ月」は**限定された条件下での好結果**であり、本番運用の前提として頼れる数字ではない。
+
+### 良い点
+
+1. **退場しない設計は徹底されている**
+   - 本筋 §2「破綻しないこと最優先」を実装レベルで満たしている
+   - 月別崩壊ゼロが実測で 12ヶ月連続、worst 月でも -7.0 pips (2025-06)
+   - SL=20 固定で最大損失がキャップされ、1 trade あたりの blow-up リスクは低い
+
+2. **戦略の相補性が機能している**
+   - A単独: +708.9, crash 1 (2025-08 -30.7)
+   - B単独: +268.4, crash 0(時刻フィルタ採用後)
+   - combo: +1043.0, crash 0 — **A と B が互いに崩壊月を救済する関係**
+   - 特に 2026-02 は A +33.8 / B +27.9 = +61.7 で一方だけでは弱い月を補完
+
+3. **コード構造は保守性が高い**
+   - 3分離(params / indicators / rules + 本体)で戦略変更コストが低い
+   - SL/TP を戦術ファイル側に持たせたことで `config/app.yaml` 依存が排除された
+   - 連結 BT 実装で月跨ぎバイアスが定量化 (+60 pips 改善幅)
+
+### 懸念点 (率直に)
+
+1. **単一期間フィッティングの色が濃い**
+   - 最適化に使ったデータは 2025-05〜2026-04 の 12ヶ月のみ
+   - 手元に 2024 以前の CSV が無いため、**真の out-of-sample 検証が一度も行われていない**
+   - 期間内分割(H1/H2、Q1-Q4)では崩壊ゼロ維持だが、これは「同じ 12ヶ月を切り分けただけ」で独立性は低い
+
+2. **フィルタの多層化で過学習リスクが積み重なっている**
+   - A 戦術: 対策①②③④、4 層
+   - B 戦術: 修正 1+2+3、3 層
+   - 合計 7 層のフィルタ、どれも「2025-2026 データで負けた事象を逆引き」で決めた閾値
+   - 特に **B の時刻フィルタ `{4, 8, 10}` は 2026-02 の SL 4 件を観察して決定**。他年で同じ時刻が弱いとは限らない
+   - A の H1 閾値 15 pips も "たまたま 15 が良かった" 可能性
+
+3. **時刻フィルタで運用時間の 25% を放棄**
+   - A `{5,7,13}` + B `{4,8,10}` = 6 時刻 / 24h = **運用時間の 25% 自主停止**
+   - これは堅牢性の現れであると同時に、**特定時間帯の市場構造に依存している**ことも意味する
+   - ブローカーや月によって weak hour が変わると、効果が逆転する可能性
+
+4. **スプレッド込みの実戦績は不明**
+   - BT は `close` 単価で発注・決済(bid=ask 仮定)
+   - A 単独で年間 849 trade、スプレッド 0.3 pips/片側なら **往復 0.6 pips × 849 = -509 pips のバイアス**
+   - 仮にこの劣化が丸々効いたら A 単独は +708.9 → +200、combo は +1043 → +534 に低下の可能性
+   - B は 43 trade なので影響小(年 -26 pips 程度)
+   - **この測定をせずに本番稼働するのは危険**、未解決課題の筆頭
+
+5. **H1 フィルタは "5 分足の直近 60 本" の近似**
+   - 真の H1 bar ではなく、5 分足 × 60 = 5 時間ウィンドウ
+   - 本当の H1 足(時間足確定のタイミング)との微妙な乖離が BT/本番で差を生む可能性
+   - `market_snapshot.bars` に複数時間足を載せる改修をすれば真の H1 に置換可能だが未着手
+
+6. **統計的有意性の裏付けが弱い**
+   - サンプル期間 12 ヶ月、サンプル trade 900 件は統計的には**まだ少ない**
+   - PF や sharpe の数値は「この期間に対する記述統計」で、将来予測の信頼区間は出せていない
+   - 「崩壊月ゼロ」は必要条件だが十分条件ではない
+
+7. **signal_close 依存の decay リスク**
+   - SL/TP 保険より signal_close 主体(91〜97%)という設計意図は良いが、これは「戦略の decision ロジックがずっと正しく市況を読めている」前提
+   - 市況が未経験の相場(例: 2024 年の円急落、2022 年の極端レンジ)になった場合、signal_close が遅れる or 打たれないリスク
+
+### 採点(個人的印象)
+
+| 項目 | 点数 | 所見 |
+|---|---:|---|
+| 退場しない設計 | A | SL=20 固定、崩壊月ゼロ、フェイルセーフ実装済 |
+| BT 結果 | B+ | 12ヶ月でクリーンだが out-of-sample 未検証 |
+| コード品質 | A- | 3分離・戦術定数化で保守性高い |
+| 再現性 | C | 本番・スプレッド・別年データ全部未検証 |
+| 過学習耐性 | C+ | 7 層フィルタは最適化依存が高い、シンプル化余地あり |
+| 統計的裏付け | C | サンプル不足、信頼区間未算出 |
+
+**総合**: 現時点は「**有望な候補戦略**」であって「**本番稼働できる戦略**」ではない。少なくとも以下 3 つは片付けてから本番移行すべき:
+- 2024 以前の OOS 検証(最優先)
+- スプレッド 0.3〜0.5 pips を乗せた BT 再評価
+- デモ口座で 1〜2 ヶ月の実稼働検証
+
+逆に言えば、**崩壊月ゼロ基準を本当に崩さない堅さがあれば、小額ロットで走らせながら OOS を並行検証する**という運用は妥当。その場合も破綻回避が最優先なので、初期ロット = 0.01 から始めて 3 ヶ月ごとに増やす段階的運用を推奨。
+
+### 優先的に詰めるべきこと (この順)
+
+1. **2024 年以前の USDJPY 5 分足 CSV 取得** → 連結 BT で崩壊月ゼロ維持を検証(= 真の OOS)
+2. **スプレッド影響測定** → 0.0/0.3/0.5 pips 条件で再評価、実績 pips の上振れ/下振れレンジを明確化
+3. **デモ 1 ヶ月稼働** → BT 決定ログと本番コマンド発行ログを突合、multi-command / command_guard の実地検証
+4. **冬時間移行後 (2026-10-25 頃) の再評価** → フィルタ hour そのままで崩壊月ゼロ維持されるか観察
+5. フィルタの寄与分解 → どのフィルタを抜くと崩壊月が復活するかの感度分析、過学習リスクの高いフィルタ特定
+
+---
+
 ## 本番再現性の所見 (2026-04-21 v2)
 
 BT で得た数値を本番環境 (MT4 + Python ブリッジ) で再現できる前提と未解決リスクの整理。
@@ -167,13 +311,15 @@ BT で得た数値を本番環境 (MT4 + Python ブリッジ) で再現できる
 - **magic_number 整合**: `bollinger_combo_AB.py::RANGE_MAGIC_NUMBER=44001` / `TREND_MAGIC_NUMBER=44002` と EA 側 `InpRangeMagicNumber=44001` / `InpTrendMagicNumber=44002` が一致。
 - **lane 識別**: EA は command meta の `entry_lane` ("range" / "trend") を読み、対応する magic_number で発注。ポジション comment `lane:range|cmd:*` を埋めて Python 側 `_is_range_lane_position` / `_is_trend_lane_position` で認識。
 
-### 未解決リスク (本番稼働前に必ず確認)
+### 確認済リスク
 
-1. **broker time 整合**
-   - CSV データ `USDJPY-cd5_20250521_monthly/*.csv` の time 列は broker server time (EET, GMT+2/+3 想定)。
-   - A の時刻フィルタ `{5, 7, 13}` と B の時刻フィルタ `{4, 8, 10}` は **この broker hour を前提**。
-   - 実ブローカー MT4 のサーバータイムゾーンが CSV データ出所と一致するか、デモ口座で `TimeCurrent()` と JST の差を突き合わせる必要あり。
-   - 一致しない場合は時刻フィルタの hours をサーバー時刻にマッピング修正。
+1. **broker time 整合 (2026-04-21 v3 確認済)**
+   - デモ口座の state.json `last_seen_latest_bar_time=14:05:00` と JST 現在時刻 20:07 の差 → **JST - MT4 = +6h = UTC+3 (EEST, 夏時間)**
+   - CSV データも MT4 出力なので同じタイムゾーン系、A `{5,7,13}` / B `{4,8,10}` はそのまま有効
+   - BT データ(2025-05〜2026-04)は DST 跨ぎ(冬 EET / 夏 EEST)を内包しており、どちらの期間でも崩壊月ゼロ実績あり
+   - 戦術フィルタは `latest_bar_time.hour` を MT4 ローカル時刻で判定、DST 切替後もそのまま動作
+
+### 未解決リスク (本番稼働前に必ず確認)
 
 2. **スプレッド・スリッページ**
    - BT は `close` 単価で発注し `close` 単価で決済 (bid==ask 仮定、pip=0.01)。
@@ -290,14 +436,24 @@ B の BT 設定: SL=20 / TP=40 pips(トレンド追従なので TP 幅広め)
 
 ## 未解決課題
 
-- **Walk-Forward 検証 未実施** — 他期間でのパラメータロバストネス未検証
-- **実ブローカー時刻の確認** — A 時刻フィルタ {5,7,13} / B 時刻フィルタ {4,8,10} は CSV の broker time (GMT+2/+3 想定) が前提。ライブ稼働前に実ブローカーの MT4 サーバー時刻と突き合わせ要
+- **Walk-Forward 検証 未実施** — 他期間でのパラメータロバストネス未検証(手元データは 2025-05 以降のみ、2024 以前の CSV 取得が前提)
 - **スプレッド影響の測定** — BT は close 単価発注。本番は bid/ask 差で微劣化。複数スプレッド条件 (0.0 / 0.2 / 0.5 pips) での 1年 BT 再評価が必要
 - **multi-command 同時発火** — combo_AB の range/trend 同時 signal 時の EA 順序処理/command_guard の振る舞いがデモで未検証
 - **GUI の動作確認** — backtest_gui_app / explore_gui_app の既存 GUI が対策①〜④+combo_AB 追加後に正しく動作するか未検証
 - **承認ゲート経由のパラメータ反映導線** 未実装(本筋 §3.3, 最終ゴール)
 - **レジーム判定の A/B 共通分離モジュール** 未実装(本筋 §3.4) — 現状 A は v4_4 内部判定、B は独自判定で二重管理
 - **月別崩壊ゼロ判定ロジック** 未実装(現状は手動集計)
+
+### 期限付きタスク (calendar-driven)
+
+- **2026-10-25 頃 (冬時間移行直前) — 時刻フィルタ DST 再確認**
+  - ブローカーのサーバー時刻が EEST(UTC+3) → EET(UTC+2) に切り替わるタイミング
+  - BT データ(2025-05〜2026-04)は DST 跨ぎを内包して崩壊月ゼロ実績ありなので、原則そのまま運用可
+  - ただし念のため以下を実行:
+    1. 冬時間のみ(2025-11〜2026-03)連結 BT → 崩壊月ゼロ維持確認
+    2. 夏時間のみ(2025-05〜2025-10, 2026-04)連結 BT → 崩壊月ゼロ維持確認
+    3. 稼働中の A `{5,7,13}` / B `{4,8,10}` 時刻フィルタが冬時間下でも期待通り機能するか、稼働ログで一週間程度観察
+  - もし冬時間期間のみ崩壊月が出る場合は冬/夏別 hour セット `{winter_hours, summer_hours}` への分岐を検討
 
 ---
 

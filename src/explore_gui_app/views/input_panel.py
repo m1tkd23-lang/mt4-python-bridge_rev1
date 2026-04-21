@@ -25,16 +25,11 @@ from PySide6.QtWidgets import (
 )
 
 from backtest.exploration_loop import BOLLINGER_PARAM_VARIATION_RANGES
+from explore_gui_app.constants import AVAILABLE_STRATEGIES
 from gui_common.widgets.collapsible_section import CollapsibleSection
 from explore_gui_app.views.parameter_dialog import ParameterDialog
 
-_AVAILABLE_STRATEGIES = [
-    "bollinger_range_v4_4",
-    "bollinger_range_v4_4_tuned_a",
-    "bollinger_range_A",
-    "bollinger_trend_B",
-    "bollinger_combo_AB",
-]
+_AVAILABLE_STRATEGIES = AVAILABLE_STRATEGIES
 
 class ArrowButton(QPushButton):
     """SpinBox風の矢印ボタン。

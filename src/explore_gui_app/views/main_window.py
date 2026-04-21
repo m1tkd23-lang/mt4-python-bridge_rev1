@@ -39,6 +39,7 @@ from explore_gui_app.styles.terminal_dark_theme import apply_terminal_dark_theme
 from explore_gui_app.services.refinement import build_refinement_plan
 from explore_gui_app.views.analysis_panel import AnalysisPanel
 from explore_gui_app.views.backtest_panel import BacktestPanel
+from explore_gui_app.views.chart_tab import ChartTab
 from explore_gui_app.views.input_panel import ExploreInputPanel
 from explore_gui_app.views.result_panel import ExploreResultPanel
 from gui_common.strategy_params import get_param_specs
@@ -185,6 +186,7 @@ class _BacktestWorker(QThread):
     finished_all_months = Signal(object)  # AllMonthsResult
     finished_error = Signal(str)
     log_message = Signal(str)
+    progress_signal = Signal(int, int)  # (current, total). total<=0 は indeterminate
 
     def __init__(
         self,
@@ -209,7 +211,10 @@ class _BacktestWorker(QThread):
                 self.log_message.emit(
                     f"Single backtest started: csv={self._single_config.csv_path}"
                 )
+                # Single は内部 callback が無いので indeterminate のみ
+                self.progress_signal.emit(0, 0)
                 artifacts = run_backtest(self._single_config)
+                self.progress_signal.emit(1, 1)
                 self.finished_single.emit(artifacts)
             else:
                 if self._csv_dir is None:
@@ -217,9 +222,17 @@ class _BacktestWorker(QThread):
                 self.log_message.emit(
                     f"All months backtest started: dir={self._csv_dir}"
                 )
+                kwargs = dict(self._all_months_kwargs)
+                # 月独立モードでは月ごとの progress callback、connected モードでも
+                # 最後に 1 回 (total, total) が返るので同じ callback でよい。
+                # 開始直後に indeterminate を一瞬出して「動いている」ことを示す。
+                self.progress_signal.emit(0, 0)
+                kwargs["progress_callback"] = (
+                    lambda current, total: self.progress_signal.emit(current, total)
+                )
                 result = run_all_months(
                     csv_dir=self._csv_dir,
-                    **self._all_months_kwargs,
+                    **kwargs,
                 )
                 self.finished_all_months.emit(result)
         except Exception as exc:
@@ -259,6 +272,9 @@ class ExploreMainWindow(QMainWindow):
 
         self._backtest_panel = BacktestPanel()
         self._tab_widget.addTab(self._backtest_panel, "Backtest 単発")
+
+        self._chart_tab = ChartTab()
+        self._tab_widget.addTab(self._chart_tab, "Chart")
 
         self._analysis_panel = AnalysisPanel()
         self._tab_widget.addTab(self._analysis_panel, "Analysis")
@@ -729,6 +745,7 @@ class ExploreMainWindow(QMainWindow):
                 tp_pips=tp_pips,
                 intrabar_fill_policy=IntrabarFillPolicy.CONSERVATIVE,
                 strategy_params=overrides,
+                connected=self._backtest_panel.get_connected(),
             )
 
         self._backtest_panel.clear_summary()
@@ -753,6 +770,9 @@ class ExploreMainWindow(QMainWindow):
         self._backtest_worker.log_message.connect(
             self._backtest_panel.append_log
         )
+        self._backtest_worker.progress_signal.connect(
+            self._backtest_panel.set_progress
+        )
         self._backtest_worker.start()
 
     def _on_backtest_stop(self) -> None:
@@ -770,6 +790,8 @@ class ExploreMainWindow(QMainWindow):
             f"Single backtest complete: {artifacts.summary.verdict} "
             f"({artifacts.summary.trades} trades)"
         )
+        # Chart タブ連携: 単発結果を渡す
+        self._chart_tab.set_artifacts(artifacts)
         self._cleanup_backtest_worker()
 
     def _on_backtest_finished_all_months(self, result: AllMonthsResult) -> None:
@@ -779,6 +801,11 @@ class ExploreMainWindow(QMainWindow):
             f"{result.aggregate.total_trades} trades, "
             f"{result.aggregate.total_pips:.2f} pips"
         )
+        # Chart タブ連携: 連結モードなら単一 artifacts、月独立モードなら先頭月のみ
+        # (月独立では artifact が 1 月分しか描画できないので暫定仕様)
+        if result.monthly_artifacts:
+            _, first_artifacts = result.monthly_artifacts[0]
+            self._chart_tab.set_artifacts(first_artifacts)
         self._cleanup_backtest_worker()
 
     def _on_backtest_finished_error(self, message: str) -> None:
