@@ -4,8 +4,8 @@ from __future__ import annotations
 import glob
 import os
 
-from PySide6.QtCore import QPoint, Qt, Signal
-from PySide6.QtGui import QPainter, QPen, QPolygon
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -18,8 +18,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QScrollArea,
-    QStyle,
-    QStyleOptionButton,
     QVBoxLayout,
     QWidget,
 )
@@ -34,120 +32,14 @@ _AVAILABLE_STRATEGIES = [
     "bollinger_trend_B",
 ]
 
-class ArrowButton(QPushButton):
-    """SpinBox風の矢印ボタン。
-
-    文字グリフではなく三角形を直接描画することで、
-    フォント依存の欠けや位置ズレを避ける。
-    """
-
-    def __init__(
-        self,
-        direction: str,
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__("", parent)
-
-        if direction not in {"up", "down"}:
-            raise ValueError("direction must be 'up' or 'down'")
-
-        self._direction = direction
-        self._triangle_offset_y = -2
-
-        self.setCursor(Qt.PointingHandCursor)
-
-        self.setStyleSheet(
-            """
-            QPushButton {
-                padding: 0px;
-                margin: 0px;
-                border-top: 1px solid #b8b8b8;
-                border-right: 1px solid #8c8c8c;
-                border-bottom: 1px solid #6a6a6a;
-                border-left: none;
-                border-radius: 0px;
-                background-color: #050505;
-            }
-            QPushButton:hover {
-                background-color: #101010;
-                border-top: 1px solid #d0d0d0;
-                border-right: 1px solid #a8a8a8;
-                border-bottom: 1px solid #7a7a7a;
-            }
-            QPushButton:pressed {
-                background-color: #1a1a1a;
-                border-top: 1px solid #5a5a5a;
-                border-right: 1px solid #7a7a7a;
-                border-bottom: 1px solid #b8b8b8;
-            }
-            QPushButton:disabled {
-                background-color: #080808;
-                border-top: 1px solid #4a4a4a;
-                border-right: 1px solid #4a4a4a;
-                border-bottom: 1px solid #4a4a4a;
-            }
-            """
-        )
-
-    def paintEvent(self, event) -> None:
-        option = QStyleOptionButton()
-        option.initFrom(self)
-        if self.isDown():
-            option.state |= QStyle.State_Sunken
-
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-
-        self.style().drawControl(QStyle.CE_PushButtonBevel, option, painter, self)
-
-        rect = self.rect()
-
-        press_shift_y = 1 if self.isDown() else 0
-
-        cx = int(rect.center().x())
-        cy = int(rect.center().y() + self._triangle_offset_y + press_shift_y)
-
-        tri_w = max(8, min(12, rect.width() - 8))
-        tri_h = max(5, min(8, rect.height() - 6))
-
-        half_w = tri_w // 2
-        half_h = tri_h // 2
-
-        if self._direction == "up":
-            points = [
-                QPoint(cx, cy - half_h),
-                QPoint(cx - half_w, cy + half_h),
-                QPoint(cx + half_w, cy + half_h),
-            ]
-        else:
-            points = [
-                QPoint(cx - half_w, cy - half_h),
-                QPoint(cx + half_w, cy - half_h),
-                QPoint(cx, cy + half_h),
-            ]
-
-        polygon = QPolygon(points)
-
-        arrow_color = Qt.white if self.isEnabled() else Qt.gray
-
-        pen = QPen(arrow_color)
-        pen.setWidth(1)
-        painter.setPen(pen)
-        painter.setBrush(arrow_color)
-        painter.drawPolygon(polygon)
-
-    def set_triangle_offset_y(self, offset_y: int) -> None:
-        self._triangle_offset_y = int(offset_y)
-        self.update()
-
 
 class IntStepper(QWidget):
     """Integer input with spinbox-like up/down buttons."""
 
     valueChanged = Signal(int)
 
-    _CONTROL_HEIGHT = 34
-    _BUTTON_WIDTH = 26
+    _CONTROL_HEIGHT = 30
+    _BUTTON_WIDTH = 24
 
     def __init__(
         self,
@@ -183,8 +75,8 @@ class IntStepper(QWidget):
         button_col.setContentsMargins(0, 0, 0, 0)
         button_col.setSpacing(0)
 
-        self._up_button = ArrowButton("up")
-        self._down_button = ArrowButton("down")
+        self._up_button = QPushButton("▴")
+        self._down_button = QPushButton("▾")
 
         button_height_top = self._CONTROL_HEIGHT // 2
         button_height_bottom = self._CONTROL_HEIGHT - button_height_top
@@ -192,8 +84,21 @@ class IntStepper(QWidget):
         self._up_button.setFixedSize(self._BUTTON_WIDTH, button_height_top)
         self._down_button.setFixedSize(self._BUTTON_WIDTH, button_height_bottom)
 
-        self._up_button.set_triangle_offset_y(-3)
-        self._down_button.set_triangle_offset_y(-2)
+        button_style = """
+            QPushButton {
+                padding: 0px;
+                margin: 0px;
+                border: 1px solid palette(mid);
+                border-left: none;
+                border-radius: 0px;
+                text-align: center;
+            }
+            QPushButton:pressed {
+                padding-top: 1px;
+            }
+        """
+        self._up_button.setStyleSheet(button_style)
+        self._down_button.setStyleSheet(button_style)
 
         self._up_button.clicked.connect(self.step_up)
         self._down_button.clicked.connect(self.step_down)
@@ -203,6 +108,22 @@ class IntStepper(QWidget):
 
         root.addWidget(self._line_edit, 1)
         root.addWidget(self._button_container, 0)
+
+        self._refresh_button_fonts()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._refresh_button_fonts()
+
+    def _refresh_button_fonts(self) -> None:
+        for button in (self._up_button, self._down_button):
+            height = max(8, button.height())
+            pixel_size = max(9, min(13, int(height * 0.78)))
+
+            font = QFont(button.font())
+            font.setPixelSize(pixel_size)
+            font.setBold(False)
+            button.setFont(font)
 
     def _clamp(self, value: int) -> int:
         return max(self._minimum, min(self._maximum, int(value)))

@@ -4,8 +4,7 @@ from __future__ import annotations
 import glob
 import os
 
-from PySide6.QtCore import QPoint, Qt, Signal
-from PySide6.QtGui import QPainter, QPen, QPolygon
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -18,8 +17,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QScrollArea,
-    QStyle,
-    QStyleOptionButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -33,216 +31,6 @@ _AVAILABLE_STRATEGIES = [
     "bollinger_range_v4_4_tuned_a",
     "bollinger_trend_B",
 ]
-
-class ArrowButton(QPushButton):
-    """SpinBox風の矢印ボタン。
-
-    文字グリフではなく三角形を直接描画することで、
-    フォント依存の欠けや位置ズレを避ける。
-    """
-
-    def __init__(
-        self,
-        direction: str,
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__("", parent)
-
-        if direction not in {"up", "down"}:
-            raise ValueError("direction must be 'up' or 'down'")
-
-        self._direction = direction
-        self._triangle_offset_y = -2
-
-        self.setCursor(Qt.PointingHandCursor)
-
-        self.setStyleSheet(
-            """
-            QPushButton {
-                padding: 0px;
-                margin: 0px;
-                border-top: 1px solid #b8b8b8;
-                border-right: 1px solid #8c8c8c;
-                border-bottom: 1px solid #6a6a6a;
-                border-left: none;
-                border-radius: 0px;
-                background-color: #050505;
-            }
-            QPushButton:hover {
-                background-color: #101010;
-                border-top: 1px solid #d0d0d0;
-                border-right: 1px solid #a8a8a8;
-                border-bottom: 1px solid #7a7a7a;
-            }
-            QPushButton:pressed {
-                background-color: #1a1a1a;
-                border-top: 1px solid #5a5a5a;
-                border-right: 1px solid #7a7a7a;
-                border-bottom: 1px solid #b8b8b8;
-            }
-            QPushButton:disabled {
-                background-color: #080808;
-                border-top: 1px solid #4a4a4a;
-                border-right: 1px solid #4a4a4a;
-                border-bottom: 1px solid #4a4a4a;
-            }
-            """
-        )
-
-    def paintEvent(self, event) -> None:
-        option = QStyleOptionButton()
-        option.initFrom(self)
-        if self.isDown():
-            option.state |= QStyle.State_Sunken
-
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-
-        self.style().drawControl(QStyle.CE_PushButtonBevel, option, painter, self)
-
-        rect = self.rect()
-
-        press_shift_y = 1 if self.isDown() else 0
-
-        cx = int(rect.center().x())
-        cy = int(rect.center().y() + self._triangle_offset_y + press_shift_y)
-
-        tri_w = max(8, min(12, rect.width() - 8))
-        tri_h = max(5, min(8, rect.height() - 6))
-
-        half_w = tri_w // 2
-        half_h = tri_h // 2
-
-        if self._direction == "up":
-            points = [
-                QPoint(cx, cy - half_h),
-                QPoint(cx - half_w, cy + half_h),
-                QPoint(cx + half_w, cy + half_h),
-            ]
-        else:
-            points = [
-                QPoint(cx - half_w, cy - half_h),
-                QPoint(cx + half_w, cy - half_h),
-                QPoint(cx, cy + half_h),
-            ]
-
-        polygon = QPolygon(points)
-
-        arrow_color = Qt.white if self.isEnabled() else Qt.gray
-
-        pen = QPen(arrow_color)
-        pen.setWidth(1)
-        painter.setPen(pen)
-        painter.setBrush(arrow_color)
-        painter.drawPolygon(polygon)
-
-    def set_triangle_offset_y(self, offset_y: int) -> None:
-        self._triangle_offset_y = int(offset_y)
-        self.update()
-
-
-class IntStepper(QWidget):
-    """Integer input with spinbox-like up/down buttons."""
-
-    valueChanged = Signal(int)
-
-    _CONTROL_HEIGHT = 34
-    _BUTTON_WIDTH = 26
-
-    def __init__(
-        self,
-        minimum: int,
-        maximum: int,
-        value: int,
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-
-        self._minimum = minimum
-        self._maximum = maximum
-        self._value = self._clamp(value)
-
-        self.setFixedHeight(self._CONTROL_HEIGHT)
-
-        root = QHBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
-
-        self._line_edit = QLineEdit(str(self._value))
-        self._line_edit.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self._line_edit.setFixedHeight(self._CONTROL_HEIGHT)
-        self._line_edit.editingFinished.connect(self._on_editing_finished)
-
-        self._button_container = QWidget()
-        self._button_container.setFixedSize(
-            self._BUTTON_WIDTH,
-            self._CONTROL_HEIGHT,
-        )
-
-        button_col = QVBoxLayout(self._button_container)
-        button_col.setContentsMargins(0, 0, 0, 0)
-        button_col.setSpacing(0)
-
-        self._up_button = ArrowButton("up")
-        self._down_button = ArrowButton("down")
-
-        button_height_top = self._CONTROL_HEIGHT // 2
-        button_height_bottom = self._CONTROL_HEIGHT - button_height_top
-
-        self._up_button.setFixedSize(self._BUTTON_WIDTH, button_height_top)
-        self._down_button.setFixedSize(self._BUTTON_WIDTH, button_height_bottom)
-
-        self._up_button.set_triangle_offset_y(-3)
-        self._down_button.set_triangle_offset_y(-2)
-
-        self._up_button.clicked.connect(self.step_up)
-        self._down_button.clicked.connect(self.step_down)
-
-        button_col.addWidget(self._up_button)
-        button_col.addWidget(self._down_button)
-
-        root.addWidget(self._line_edit, 1)
-        root.addWidget(self._button_container, 0)
-
-    def _clamp(self, value: int) -> int:
-        return max(self._minimum, min(self._maximum, int(value)))
-
-    def _on_editing_finished(self) -> None:
-        text = self._line_edit.text().strip()
-        try:
-            parsed = int(text)
-        except ValueError:
-            parsed = self._value
-        self.setValue(parsed)
-
-    def setRange(self, minimum: int, maximum: int) -> None:
-        self._minimum = int(minimum)
-        self._maximum = int(maximum)
-        self.setValue(self._value)
-
-    def value(self) -> int:
-        return self._value
-
-    def setValue(self, value: int) -> None:
-        clamped = self._clamp(value)
-        if clamped != self._value:
-            self._value = clamped
-            self._line_edit.setText(str(self._value))
-            self.valueChanged.emit(self._value)
-        else:
-            self._line_edit.setText(str(clamped))
-
-    def step_up(self) -> None:
-        self.setValue(self._value + 1)
-
-    def step_down(self) -> None:
-        self.setValue(self._value - 1)
-
-    def setEnabled(self, enabled: bool) -> None:
-        super().setEnabled(enabled)
-        self._line_edit.setEnabled(enabled)
-        self._up_button.setEnabled(enabled)
-        self._down_button.setEnabled(enabled)
 
 
 class ExploreInputPanel(QWidget):
@@ -331,6 +119,7 @@ class ExploreInputPanel(QWidget):
     # CSV section
     # ------------------------------------------------------------------
 
+    # CSV selection mode constants
     MODE_SELECTED_3_MONTHS = "selected_3_months"
     MODE_ALL_CSVS = "all_csvs"
     MODE_CUSTOM = "custom"
@@ -341,6 +130,7 @@ class ExploreInputPanel(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(6)
 
+        # --- CSV File row ---
         form_top = QFormLayout()
         csv_row = QHBoxLayout()
         self.csv_path_edit = QLineEdit()
@@ -351,6 +141,7 @@ class ExploreInputPanel(QWidget):
         csv_row.addWidget(browse_csv)
         form_top.addRow("CSV File:", csv_row)
 
+        # --- CSV Dir row ---
         dir_row = QHBoxLayout()
         self.csv_dir_edit = QLineEdit()
         self.csv_dir_edit.setPlaceholderText(
@@ -363,6 +154,7 @@ class ExploreInputPanel(QWidget):
         form_top.addRow("CSV Dir:", dir_row)
         layout.addLayout(form_top)
 
+        # --- CSV selection mode radio buttons ---
         mode_label = QLabel("CSV Selection Mode:")
         layout.addWidget(mode_label)
 
@@ -383,10 +175,12 @@ class ExploreInputPanel(QWidget):
         mode_row.addStretch(1)
         layout.addLayout(mode_row)
 
+        # --- CSV selection info label ---
         self._csv_selection_info = QLabel("")
         self._csv_selection_info.setWordWrap(True)
         layout.addWidget(self._csv_selection_info)
 
+        # --- Custom selection checklist (scroll area) ---
         self._custom_scroll = QScrollArea()
         self._custom_scroll.setWidgetResizable(True)
         self._custom_scroll.setMaximumHeight(150)
@@ -398,16 +192,20 @@ class ExploreInputPanel(QWidget):
         self._custom_scroll.setVisible(False)
         layout.addWidget(self._custom_scroll)
 
+        # Store checkbox references
         self._csv_checkboxes: list[QCheckBox] = []
 
+        # Disable mode selection initially (enabled when CSV Dir is set)
         self._set_csv_mode_enabled(False)
 
+        # Connect signals
         self.csv_dir_edit.textChanged.connect(self._on_csv_dir_changed)
         self._csv_mode_group.buttonClicked.connect(self._on_csv_mode_changed)
 
         return CollapsibleSection("Data Source", box, expanded=True)
 
     def _set_csv_mode_enabled(self, enabled: bool) -> None:
+        """Enable or disable CSV selection mode radio buttons."""
         self._radio_3months.setEnabled(enabled)
         self._radio_all.setEnabled(enabled)
         self._radio_custom.setEnabled(enabled)
@@ -416,6 +214,7 @@ class ExploreInputPanel(QWidget):
             self._custom_scroll.setVisible(False)
 
     def _scan_csv_dir(self, dir_path: str) -> list[str]:
+        """Scan a directory for CSV files, return sorted list of absolute paths."""
         if not dir_path or not os.path.isdir(dir_path):
             return []
         pattern = os.path.join(dir_path, "*.csv")
@@ -423,6 +222,7 @@ class ExploreInputPanel(QWidget):
         return files
 
     def _on_csv_dir_changed(self, text: str) -> None:
+        """Called when CSV Dir text changes."""
         dir_path = text.strip()
         has_dir = bool(dir_path) and os.path.isdir(dir_path)
         self._set_csv_mode_enabled(has_dir)
@@ -430,13 +230,16 @@ class ExploreInputPanel(QWidget):
             self._refresh_csv_selection()
 
     def _on_csv_mode_changed(self) -> None:
+        """Called when CSV selection mode radio button changes."""
         self._refresh_csv_selection()
 
     def _refresh_csv_selection(self) -> None:
+        """Refresh CSV selection info and custom checklist based on current mode."""
         dir_path = self.csv_dir_edit.text().strip()
         csv_files = self._scan_csv_dir(dir_path)
         mode = self.get_csv_selection_mode()
 
+        # Update custom checklist visibility
         self._custom_scroll.setVisible(mode == self.MODE_CUSTOM)
 
         if not csv_files:
@@ -463,11 +266,14 @@ class ExploreInputPanel(QWidget):
             )
 
     def _rebuild_custom_checklist(self, csv_files: list[str]) -> None:
+        """Rebuild the custom selection checklist with checkboxes for each CSV."""
+        # Clear existing checkboxes
         for cb in self._csv_checkboxes:
             self._custom_check_layout.removeWidget(cb)
             cb.deleteLater()
         self._csv_checkboxes.clear()
 
+        # Add new checkboxes
         for filepath in csv_files:
             cb = QCheckBox(os.path.basename(filepath))
             cb.setProperty("csv_path", filepath)
@@ -477,9 +283,12 @@ class ExploreInputPanel(QWidget):
             self._csv_checkboxes.append(cb)
 
     def _on_custom_check_changed(self) -> None:
+        """Update info label when custom checkboxes change."""
         total = len(self._csv_checkboxes)
         checked = sum(1 for cb in self._csv_checkboxes if cb.isChecked())
-        self._csv_selection_info.setText(f"{checked} of {total} CSVs selected.")
+        self._csv_selection_info.setText(
+            f"{checked} of {total} CSVs selected."
+        )
 
     def _browse_csv(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -501,19 +310,25 @@ class ExploreInputPanel(QWidget):
         box = QWidget()
         form = QFormLayout(box)
         form.setContentsMargins(4, 4, 4, 4)
-        form.setVerticalSpacing(2)
-        form.setHorizontalSpacing(16)
 
-        self.max_iterations_spin = IntStepper(1, 1000, 10)
+        self.max_iterations_spin = QSpinBox()
+        self.max_iterations_spin.setRange(1, 1000)
+        self.max_iterations_spin.setValue(10)
         form.addRow("Max Iterations:", self.max_iterations_spin)
 
-        self.max_improve_retries_spin = IntStepper(0, 100, 1)
+        self.max_improve_retries_spin = QSpinBox()
+        self.max_improve_retries_spin.setRange(0, 100)
+        self.max_improve_retries_spin.setValue(1)
         form.addRow("Improve Retries:", self.max_improve_retries_spin)
 
-        self.max_param_variations_spin = IntStepper(1, 100, 3)
+        self.max_param_variations_spin = QSpinBox()
+        self.max_param_variations_spin.setRange(1, 100)
+        self.max_param_variations_spin.setValue(3)
         form.addRow("Param Variations:", self.max_param_variations_spin)
 
-        self.seed_spin = IntStepper(0, 999999, 42)
+        self.seed_spin = QSpinBox()
+        self.seed_spin.setRange(0, 999999)
+        self.seed_spin.setValue(42)
         form.addRow("Random Seed:", self.seed_spin)
 
         return CollapsibleSection("Loop Config", box, expanded=True)
@@ -596,6 +411,7 @@ class ExploreInputPanel(QWidget):
         return text if text else None
 
     def get_csv_selection_mode(self) -> str:
+        """Return the current CSV selection mode string."""
         if self._radio_all.isChecked():
             return self.MODE_ALL_CSVS
         if self._radio_custom.isChecked():
@@ -603,6 +419,10 @@ class ExploreInputPanel(QWidget):
         return self.MODE_SELECTED_3_MONTHS
 
     def get_csv_paths(self) -> list[str] | None:
+        """Build csv_paths list based on current CSV selection mode.
+
+        Returns None if CSV Dir is not set (backward-compatible single CSV mode).
+        """
         dir_path = self.csv_dir_edit.text().strip()
         if not dir_path or not os.path.isdir(dir_path):
             return None
@@ -615,9 +435,9 @@ class ExploreInputPanel(QWidget):
 
         if mode == self.MODE_SELECTED_3_MONTHS:
             return csv_files[-3:] if len(csv_files) >= 3 else list(csv_files)
-        if mode == self.MODE_ALL_CSVS:
+        elif mode == self.MODE_ALL_CSVS:
             return list(csv_files)
-        if mode == self.MODE_CUSTOM:
+        elif mode == self.MODE_CUSTOM:
             selected = [
                 cb.property("csv_path")
                 for cb in self._csv_checkboxes

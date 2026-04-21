@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import glob
 import os
+from PySide6.QtGui import QFont
 
-from PySide6.QtCore import QPoint, Qt, Signal
-from PySide6.QtGui import QPainter, QPen, QPolygon
+
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -18,8 +19,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QScrollArea,
-    QStyle,
-    QStyleOptionButton,
     QVBoxLayout,
     QWidget,
 )
@@ -34,120 +33,18 @@ _AVAILABLE_STRATEGIES = [
     "bollinger_trend_B",
 ]
 
-class ArrowButton(QPushButton):
-    """SpinBox風の矢印ボタン。
-
-    文字グリフではなく三角形を直接描画することで、
-    フォント依存の欠けや位置ズレを避ける。
-    """
-
-    def __init__(
-        self,
-        direction: str,
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__("", parent)
-
-        if direction not in {"up", "down"}:
-            raise ValueError("direction must be 'up' or 'down'")
-
-        self._direction = direction
-        self._triangle_offset_y = -2
-
-        self.setCursor(Qt.PointingHandCursor)
-
-        self.setStyleSheet(
-            """
-            QPushButton {
-                padding: 0px;
-                margin: 0px;
-                border-top: 1px solid #b8b8b8;
-                border-right: 1px solid #8c8c8c;
-                border-bottom: 1px solid #6a6a6a;
-                border-left: none;
-                border-radius: 0px;
-                background-color: #050505;
-            }
-            QPushButton:hover {
-                background-color: #101010;
-                border-top: 1px solid #d0d0d0;
-                border-right: 1px solid #a8a8a8;
-                border-bottom: 1px solid #7a7a7a;
-            }
-            QPushButton:pressed {
-                background-color: #1a1a1a;
-                border-top: 1px solid #5a5a5a;
-                border-right: 1px solid #7a7a7a;
-                border-bottom: 1px solid #b8b8b8;
-            }
-            QPushButton:disabled {
-                background-color: #080808;
-                border-top: 1px solid #4a4a4a;
-                border-right: 1px solid #4a4a4a;
-                border-bottom: 1px solid #4a4a4a;
-            }
-            """
-        )
-
-    def paintEvent(self, event) -> None:
-        option = QStyleOptionButton()
-        option.initFrom(self)
-        if self.isDown():
-            option.state |= QStyle.State_Sunken
-
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-
-        self.style().drawControl(QStyle.CE_PushButtonBevel, option, painter, self)
-
-        rect = self.rect()
-
-        press_shift_y = 1 if self.isDown() else 0
-
-        cx = int(rect.center().x())
-        cy = int(rect.center().y() + self._triangle_offset_y + press_shift_y)
-
-        tri_w = max(8, min(12, rect.width() - 8))
-        tri_h = max(5, min(8, rect.height() - 6))
-
-        half_w = tri_w // 2
-        half_h = tri_h // 2
-
-        if self._direction == "up":
-            points = [
-                QPoint(cx, cy - half_h),
-                QPoint(cx - half_w, cy + half_h),
-                QPoint(cx + half_w, cy + half_h),
-            ]
-        else:
-            points = [
-                QPoint(cx - half_w, cy - half_h),
-                QPoint(cx + half_w, cy - half_h),
-                QPoint(cx, cy + half_h),
-            ]
-
-        polygon = QPolygon(points)
-
-        arrow_color = Qt.white if self.isEnabled() else Qt.gray
-
-        pen = QPen(arrow_color)
-        pen.setWidth(1)
-        painter.setPen(pen)
-        painter.setBrush(arrow_color)
-        painter.drawPolygon(polygon)
-
-    def set_triangle_offset_y(self, offset_y: int) -> None:
-        self._triangle_offset_y = int(offset_y)
-        self.update()
-
 
 class IntStepper(QWidget):
-    """Integer input with spinbox-like up/down buttons."""
+    """Integer input with custom ▲ / ▼ buttons.
+
+    Arrow text is centered and its font size is recalculated from the
+    current button height, so fullscreen/windowed changes remain readable.
+    """
 
     valueChanged = Signal(int)
 
-    _CONTROL_HEIGHT = 34
-    _BUTTON_WIDTH = 26
+    _CONTROL_HEIGHT = 36
+    _BUTTON_WIDTH = 36
 
     def __init__(
         self,
@@ -162,7 +59,8 @@ class IntStepper(QWidget):
         self._maximum = maximum
         self._value = self._clamp(value)
 
-        self.setFixedHeight(self._CONTROL_HEIGHT)
+        self.setMinimumHeight(self._CONTROL_HEIGHT)
+        self.setMaximumHeight(self._CONTROL_HEIGHT)
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -170,39 +68,53 @@ class IntStepper(QWidget):
 
         self._line_edit = QLineEdit(str(self._value))
         self._line_edit.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self._line_edit.setFixedHeight(self._CONTROL_HEIGHT)
+        self._line_edit.setMinimumHeight(self._CONTROL_HEIGHT)
+        self._line_edit.setMaximumHeight(self._CONTROL_HEIGHT)
         self._line_edit.editingFinished.connect(self._on_editing_finished)
 
         self._button_container = QWidget()
-        self._button_container.setFixedSize(
-            self._BUTTON_WIDTH,
-            self._CONTROL_HEIGHT,
-        )
+        self._button_container.setFixedWidth(self._BUTTON_WIDTH)
+        self._button_container.setMinimumHeight(self._CONTROL_HEIGHT)
+        self._button_container.setMaximumHeight(self._CONTROL_HEIGHT)
 
         button_col = QVBoxLayout(self._button_container)
         button_col.setContentsMargins(0, 0, 0, 0)
         button_col.setSpacing(0)
 
-        self._up_button = ArrowButton("up")
-        self._down_button = ArrowButton("down")
+        self._up_button = QPushButton("▲")
+        self._down_button = QPushButton("▼")
 
-        button_height_top = self._CONTROL_HEIGHT // 2
-        button_height_bottom = self._CONTROL_HEIGHT - button_height_top
-
-        self._up_button.setFixedSize(self._BUTTON_WIDTH, button_height_top)
-        self._down_button.setFixedSize(self._BUTTON_WIDTH, button_height_bottom)
-
-        self._up_button.set_triangle_offset_y(-3)
-        self._down_button.set_triangle_offset_y(-2)
+        for button in (self._up_button, self._down_button):
+            button.setFixedWidth(self._BUTTON_WIDTH)
+            button.setSizePolicy(button.sizePolicy().horizontalPolicy(), button.sizePolicy().verticalPolicy())
+            button.setStyleSheet(
+                "padding: 0; margin: 0; text-align: center;"
+            )
 
         self._up_button.clicked.connect(self.step_up)
         self._down_button.clicked.connect(self.step_down)
 
-        button_col.addWidget(self._up_button)
-        button_col.addWidget(self._down_button)
+        button_col.addWidget(self._up_button, 1)
+        button_col.addWidget(self._down_button, 1)
 
         root.addWidget(self._line_edit, 1)
         root.addWidget(self._button_container, 0)
+
+        self._refresh_button_fonts()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._refresh_button_fonts()
+
+    def _refresh_button_fonts(self) -> None:
+        """Scale arrow font from current button height and keep it centered."""
+        for button in (self._up_button, self._down_button):
+            h = max(8, button.height())
+            pixel_size = max(8, min(16, int(h * 0.55)))
+            font = QFont(button.font())
+            font.setPixelSize(pixel_size)
+            font.setBold(True)
+            button.setFont(font)
 
     def _clamp(self, value: int) -> int:
         return max(self._minimum, min(self._maximum, int(value)))
@@ -501,8 +413,6 @@ class ExploreInputPanel(QWidget):
         box = QWidget()
         form = QFormLayout(box)
         form.setContentsMargins(4, 4, 4, 4)
-        form.setVerticalSpacing(2)
-        form.setHorizontalSpacing(16)
 
         self.max_iterations_spin = IntStepper(1, 1000, 10)
         form.addRow("Max Iterations:", self.max_iterations_spin)

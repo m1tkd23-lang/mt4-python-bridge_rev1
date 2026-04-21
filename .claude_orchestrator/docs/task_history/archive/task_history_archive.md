@@ -1326,3 +1326,247 @@ single commit c03997e で 過去TASK作業記録.md 1 ファイル限定 (+1/-44
 - TASK-0131 past 単独保持を確定したが、archive 側 summary 反映要否は未決定で、将来 archive 側に TASK-0131 エントリ追加判断が入る場合は duplication 方針再確認が必要。
 - 本 commit (c03997e) は local のみで origin/main への push 未実施。origin/main 未 push 累積 commit は 5 → 6 に増加。
 
+## TASK-0131 : explore_gui 統合 Phase 2 の director 事前判断タスク（Compare A/B 帰属・タブ B 重複許容・タブ D Phase 帰属の 3 点確定）
+
+- 実行日時: 2026-04-17 16:35
+- task_type: research
+- risk_level: low
+
+### 変更内容
+Phase 2 着手前の director 事前判断 3 点を確定し、explore_gui主導移行マップ.md §9-2・§11-1・§11-2・§11-3・§11-4・§12-3 および feature_inventory.md『統合運...
+
+### 関連ファイル
+- .claude_orchestrator/docs/project_core/explore_gui主導移行マップ.md
+- .claude_orchestrator/docs/feature_inventory.md
+
+### 注意点
+- T-I（README 3 アプリ併存運用ガイド）が Phase 2 後半まで未反映のまま Phase 2 実装を回すと、Compare A/B の切替運用と手動 apply_params.py 運用の案内が口頭・非公式にとどまる可能性がある
+- タブ B 重複許容の用途境界は『誘導リンク』という UI 表示に依存するため、T-C 実装タスクでリンク文の文言・配置が完了条件から漏れると境界が曖昧化する可能性がある
+- タブ D の Phase 3 再評価トリガ『L2 採択頻度が月次 1 回以上』が定性的で、採択イベントの観測手段が未整理のため、再評価のきっかけ検知が遅れる可能性がある（Phase 3 着手タスク起案時に観測手段の設計が必要）
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## TASK-0132 : explore_gui トップレベル QTabWidget 化（T-A）: タブ A 稼働 + タブ B/C 空フレーム、タブ D 空フレームは設置しない 3 タブ構成
+
+- 実行日時: 2026-04-17 16:49
+- task_type: feature
+- risk_level: medium
+
+### 変更内容
+explore_gui の ExploreMainWindow にトップレベル QTabWidget を導入し、タブ A (Explore) に既存の ExploreInputPanel / ExploreResultPanel を収容、タ...
+
+### 関連ファイル
+- src/explore_gui_app/views/main_window.py
+
+### 注意点
+- 実ユーザー操作による Run / Stop / Refine / Phase 2 全通しの手動確認は未実施。offscreen 起動・タブ切替・パネル収容 assert までの自動検証に留まるため、コミット前の user 側最終確認が必須。
+- TASK-0131 carry_over（T-I README 3 アプリ併存運用ガイド未反映 / タブ B 用途境界の誘導リンク文言 / タブ D 再評価トリガ『L2 採択頻度 月次 1 回』の観測手段未整理）は本タスク未対処のまま Phase 2 後続で順次解消する必要がある。
+- §9-2 の Live status 枠 / ステータスバー Phase 昇格表示は本タスクスコープ外で未実装。後続 T-H / T-I 相当で扱う必要がある。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## TASK-0133 : TASK-0132 T-A 実装完了の docs 反映（feature_inventory.md + explore_gui主導移行マップ.md §11-1 T-A）
+
+- 実行日時: 2026-04-17 21:18
+- task_type: docs
+- risk_level: low
+
+### 変更内容
+TASK-0132 T-A 実装完了の旨を feature_inventory.md の 2 エントリ（『探索専用GUI（explore_gui.py）』『統合運用GUI方針（explore_gui 主導）』）notes 末尾と、explo...
+
+### 関連ファイル
+- .claude_orchestrator/docs/feature_inventory.md
+- .claude_orchestrator/docs/project_core/explore_gui主導移行マップ.md
+
+### 注意点
+- §11-1 T-A 見出し括弧書き『タブ B/C/D は空フレームを設置』の旧表現は未改訂のまま。サブバレットで TASK-0131 確定方針が優先される旨を明示しているが、見出しのみ読んだ読者がタブ D 空フレーム設置を誤認する残存リスクは存在する。
+- explore_gui 実機起動による Run / Stop / Refine / Phase 2 全通しの手動確認は本タスクスコープ外で未実施。TASK-0132 carry_over として user 側での履行が引き続き必要。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## TASK-0134 : explore_gui主導移行マップ.md §11-1 T-A 見出し括弧書き『タブ B/C/D は空フレームを設置』の文言改訂（タブ D を含めない表現へ）
+
+- 実行日時: 2026-04-17 21:24
+- task_type: docs
+- risk_level: low
+
+### 変更内容
+explore_gui主導移行マップ.md §11-1 T-A 見出し括弧書きを『タブ A のみ稼働、タブ B/C は placeholder、タブ D は未設置（Phase 3 帰属）』に改訂し、見出しのみ読んでもタブ D 非設置を誤認し...
+
+### 関連ファイル
+- .claude_orchestrator/docs/project_core/explore_gui主導移行マップ.md
+
+### 注意点
+- §11-1 T-A 配下 TASK-0132 サブバレット（line 308）に旧見出し引用表現『見出しの《タブ B/C/D は空フレームを設置》より TASK-0131 確定が優先され』が歴史的経緯として残存する。内容整合は維持されているが、見出し改訂後に旧表現引用と読み取れるかは読み手リテラシーに依存（重要度低）。
+- [carry_over 継承] explore_gui 実機起動による Run / Stop / Refine / Phase 2 全通し手動確認は本 task スコープ外で未実施。TASK-0132 carry_over として user 側履行が引き続き必要。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## TASK-0135 : explore_gui主導移行マップ.md §11-1 T-A TASK-0132 サブバレット（line 308 付近）内の旧見出し引用表現『タブ B/C/D は空フレームを設置』の文面整理（軽量 docs 改訂）
+
+- 実行日時: 2026-04-17 21:35
+- task_type: docs
+- risk_level: low
+
+### 変更内容
+explore_gui主導移行マップ.md §11-1 T-A 配下 TASK-0132 サブバレット（line 308）内の旧見出し引用表現『タブ B/C/D は空フレームを設置』を除去し、現 §11-1 T-A 見出し括弧書き『タブ A...
+
+### 関連ファイル
+- .claude_orchestrator/docs/project_core/explore_gui主導移行マップ.md
+
+### 注意点
+- [carry_over 継承] explore_gui 実機起動による Run / Stop / Refine / Phase 2 全通し手動確認は本 task スコープ外で未実施。TASK-0132 carry_over として user 側履行が引き続き必要。
+- nice_to_have として reviewer が挙げた『文末括弧書き内の見出し具体文引用を省略し簡潔表現化する更なる軽量化』は本 task 必須ではないが、T-B / T-C 起案時の §11 参照頻度増加タイミングで再評価の余地がある（重要度低）。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## TASK-0136 : T-B（タブ C Analysis 最小実装）起案前の director 事前判断タスク：タブ C 最小スコープ・責務境界・既存 analysis_panel 再利用範囲の 3 点確定
+
+- 実行日時: 2026-04-17 21:48
+- task_type: research
+- risk_level: low
+
+### 変更内容
+T-B 起案前の director 事前判断 3 点（タブ C 最小スコープ / 責務境界 / 既存 analysis_panel 再利用範囲）について、§9-2・§11-1 T-B・§11-2 T-F・§12-3 と既存コード実態を突合し...
+
+### 関連ファイル
+- none
+
+### 注意点
+- C1-a 採択により §9-2 の『MR サマリー + 全期間集約 + 月別ばらつき』フル像との差分が Phase 2 完了時点で残る。T-B 実装起案後の docs 反映 task にて §9-2 注記追記もしくは Phase 2 追補 task 起案の要否を判断する必要がある。
+- C3-a コピー方式採用により MR 表示ロジックが一時的に 2 系統（backtest_gui_app 側 / explore_gui 側）並存する。T-D（gui_common/widgets/ 化判断）まで表記ズレ発生リスクを持ち越す。
+- explore_gui 実機起動による Run/Stop/Refine/Phase 2 全通し手動確認は TASK-0132/0135 からの carry_over として user 側履行継続中。T-B 完了後も同スコープの手動確認が必要。
+- §11-1 T-A サブバレット文末括弧書き内の見出し具体文引用省略による軽量化（TASK-0135 nice_to_have）は T-B / T-C 起案時の §11 参照頻度増加タイミングで再評価（重要度低、必要時のみ起案）。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## TASK-0137 : T-B（タブ C Analysis 最小実装）: explore_gui タブ C に Phase 2 MR サマリー 11 項目表示を新規 analysis_panel.py で実装する
+
+- 実行日時: 2026-04-17 22:14
+- task_type: feature
+- risk_level: medium
+
+### 変更内容
+explore_gui タブ C を placeholder から新規 AnalysisPanel（MR サマリー 11 項目の読み取り専用ビュー）に差し替え、Phase 2 完了時に最良候補の全月合算 MR サマリーを背景ワーカーで計算し...
+
+### 関連ファイル
+- src/explore_gui_app/views/analysis_panel.py
+- src/explore_gui_app/views/main_window.py
+
+### 注意点
+- C3-a コピー方式により MR 表示ロジックが backtest_gui_app 側（result_presenter._populate_mean_reversion / summary_panel）と explore_gui 側（AnalysisPanel.set_summary）の 2 系統で並存。T-D 着手前に片側だけ改修すると表記ズレが発生する恐れがある。後続 docs 反映 task で『片側変更時は他方同時メンテ必須』の運用ルールを明示化することで緩和する。
+- Phase 2 完了後の MR analysis は best 候補 overrides で csv_dir 配下 CSV を再 run_backtest するため、Phase 2 本体と同程度以上の追加計算時間が発生する。進捗表示はログ行のみで進捗バーは未実装のため、user 視点では『Phase 2 完了 → タブ C 数値反映』間が無通知待機になる。UX 改善は T-D 付近で検討する nice_to_have。
+- reviewer nice_to_have に挙がった『Phase 2 が Stop 割り込みで途中終了しても _on_phase2_finished_ok が走り _start_mr_analysis が実行される』『_MRAnalysisWorker 実行中に Stop ボタンが無効で user 停止不可』『_MRAnalysisWorker が requestInterruption で途中終了した場合 self._mr_analysis_worker が解放されない』の 3 点は C1-a 最小完了条件には影響しないが、T-D 付近で改修検討が必要。
+- docs 反映（§11-1 T-B サブバレット追記 / §9-2 最小スコープ注記 or Phase 2 追補 task 起案要否 / 過去TASK作業記録.md 追記）は本 task で未実施。後続 docs 反映 task の起案が必須 followup として残る。
+- explore_gui 実機起動による Run/Stop/Refine/Phase 2 全通し手動目視確認は本 task スコープ外（TASK-0132/0135 carry_over）。本 task で追加した Phase 2 → MR analysis 非同期反映動作も実機確認が未了のまま後続 task に進む。
+
+## TASK-0138 : TASK-0136/TASK-0137 完了分の docs 反映（explore_gui主導移行マップ.md §11-1 T-B サブバレット追記 + §9-2 タブ C 最小スコープ注記判断 + 過去TASK作業記録.md 追記）
+
+- 実行日時: 2026-04-17 22:53
+- task_type: docs
+- risk_level: low
+
+### 変更内容
+explore_gui主導移行マップ.md §11-1 T-B 配下に TASK-0137 実装サブバレット（TASK-0132 §11-1 T-A 追記パターン踏襲）を追記し、§9-2 タブ C 記述に C1-a 最小スコープ注記（Pha...
+
+### 関連ファイル
+- .claude_orchestrator/docs/project_core/explore_gui主導移行マップ.md
+
+### 注意点
+- C3-a 採択により MR 表示ロジックが backtest_gui_app 側 (result_presenter._populate_mean_reversion / summary_panel) と explore_gui 側 (AnalysisPanel.set_summary) の 2 系統並存。§9-2 / §11-1 T-B / 過去TASK作業記録.md / 将来の feature_inventory.md の四重管理となり、T-D 着手時に整合性再点検が必須。
+- §9-2 タブ C 末尾注記と §11-1 T-B 配下サブバレットの二重管理リスク。T-D 再評価時に AnalysisPanel UI 拡張判断と §9-2 / §11-1 T-B 整合確認を同時に実施する必要がある。
+- explore_gui 実機起動による Run/Stop/Refine/Phase 2 全通し + TASK-0137 で追加した Phase 2 → MR analysis 非同期反映動作の手動目視確認は本 TASK スコープ外で TASK-0132/0135/0136/0137 carry_over として user 側履行継続。docs 上は『反映済み』でも実機挙動の最終裏付けは別系統で必要。
+- §9-2 タブ C 末尾追記が 1 文に複数論点を凝縮しており可読性が劣る（reviewer nice_to_have）。T-D 周辺で軽量 docs 整理 task として改行 / サブバレット化を検討する余地が残る（重要度低）。
+
+
+
+
+
+
+
+
+
+
+
+

@@ -34,11 +34,12 @@ _AVAILABLE_STRATEGIES = [
     "bollinger_trend_B",
 ]
 
+
 class ArrowButton(QPushButton):
     """SpinBox風の矢印ボタン。
 
     文字グリフではなく三角形を直接描画することで、
-    フォント依存の欠けや位置ズレを避ける。
+    フォント依存の欠けや位置ズレを防ぐ。
     """
 
     def __init__(
@@ -52,39 +53,23 @@ class ArrowButton(QPushButton):
             raise ValueError("direction must be 'up' or 'down'")
 
         self._direction = direction
-        self._triangle_offset_y = -2
 
-        self.setCursor(Qt.PointingHandCursor)
+        # 上に少し寄せたいので負値にすると上へ、正値にすると下へ
+        # 今回は「若干上」にしたいので -1 を既定値にする
+        self._triangle_offset_y = 10000
 
         self.setStyleSheet(
             """
             QPushButton {
                 padding: 0px;
                 margin: 0px;
-                border-top: 1px solid #b8b8b8;
-                border-right: 1px solid #8c8c8c;
-                border-bottom: 1px solid #6a6a6a;
+                border: 1px solid palette(mid);
                 border-left: none;
                 border-radius: 0px;
-                background-color: #050505;
-            }
-            QPushButton:hover {
-                background-color: #101010;
-                border-top: 1px solid #d0d0d0;
-                border-right: 1px solid #a8a8a8;
-                border-bottom: 1px solid #7a7a7a;
+                background-color: palette(base);
             }
             QPushButton:pressed {
-                background-color: #1a1a1a;
-                border-top: 1px solid #5a5a5a;
-                border-right: 1px solid #7a7a7a;
-                border-bottom: 1px solid #b8b8b8;
-            }
-            QPushButton:disabled {
-                background-color: #080808;
-                border-top: 1px solid #4a4a4a;
-                border-right: 1px solid #4a4a4a;
-                border-bottom: 1px solid #4a4a4a;
+                background-color: palette(dark);
             }
             """
         )
@@ -96,19 +81,18 @@ class ArrowButton(QPushButton):
             option.state |= QStyle.State_Sunken
 
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.Antialiasing, False)
 
         self.style().drawControl(QStyle.CE_PushButtonBevel, option, painter, self)
 
         rect = self.rect()
 
-        press_shift_y = 1 if self.isDown() else 0
+        cx = rect.center().x()
+        cy = rect.center().y() + self._triangle_offset_y
 
-        cx = int(rect.center().x())
-        cy = int(rect.center().y() + self._triangle_offset_y + press_shift_y)
-
-        tri_w = max(8, min(12, rect.width() - 8))
-        tri_h = max(5, min(8, rect.height() - 6))
+        # ボタンサイズから安全な三角サイズを計算
+        tri_w = max(6, min(10, rect.width() - 10))
+        tri_h = max(4, min(7, rect.height() - 8))
 
         half_w = tri_w // 2
         half_h = tri_h // 2
@@ -128,12 +112,10 @@ class ArrowButton(QPushButton):
 
         polygon = QPolygon(points)
 
-        arrow_color = Qt.white if self.isEnabled() else Qt.gray
-
-        pen = QPen(arrow_color)
+        pen = QPen(self.palette().buttonText().color())
         pen.setWidth(1)
         painter.setPen(pen)
-        painter.setBrush(arrow_color)
+        painter.setBrush(self.palette().buttonText())
         painter.drawPolygon(polygon)
 
     def set_triangle_offset_y(self, offset_y: int) -> None:
@@ -146,8 +128,8 @@ class IntStepper(QWidget):
 
     valueChanged = Signal(int)
 
-    _CONTROL_HEIGHT = 34
-    _BUTTON_WIDTH = 26
+    _CONTROL_HEIGHT = 30
+    _BUTTON_WIDTH = 24
 
     def __init__(
         self,
@@ -192,8 +174,9 @@ class IntStepper(QWidget):
         self._up_button.setFixedSize(self._BUTTON_WIDTH, button_height_top)
         self._down_button.setFixedSize(self._BUTTON_WIDTH, button_height_bottom)
 
-        self._up_button.set_triangle_offset_y(-3)
-        self._down_button.set_triangle_offset_y(-2)
+        # 「少し上に寄せる」調整
+        self._up_button.set_triangle_offset_y(-1)
+        self._down_button.set_triangle_offset_y(-1)
 
         self._up_button.clicked.connect(self.step_up)
         self._down_button.clicked.connect(self.step_down)

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import copy
 import logging
-from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
@@ -13,6 +12,8 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QWidget,
 )
+
+from pathlib import Path
 
 from backtest.exploration_loop import (
     BOLLINGER_PARAM_VARIATION_RANGES,
@@ -35,13 +36,13 @@ from backtest.service import (
     run_backtest,
 )
 from backtest.simulator import IntrabarFillPolicy
-from explore_gui_app.styles.terminal_dark_theme import apply_terminal_dark_theme
+from backtest_gui_app.styles.dark_theme import apply_dark_theme
+from gui_common.strategy_params import get_param_specs
 from explore_gui_app.services.refinement import build_refinement_plan
 from explore_gui_app.views.analysis_panel import AnalysisPanel
 from explore_gui_app.views.backtest_panel import BacktestPanel
 from explore_gui_app.views.input_panel import ExploreInputPanel
 from explore_gui_app.views.result_panel import ExploreResultPanel
-from gui_common.strategy_params import get_param_specs
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,7 @@ class _Phase2Worker(QThread):
     def run(self) -> None:
         try:
             cfg = self._base_config
+            # Phase 2: use csv_dir for all CSVs (csv_paths=None)
             results: list[BollingerExplorationResult] = []
             for idx, overrides in enumerate(self._candidates, 1):
                 if self.isInterruptionRequested():
@@ -120,7 +122,7 @@ class _Phase2Worker(QThread):
                     csv_dir=cfg.csv_dir,
                     cross_month_thresholds=cfg.cross_month_thresholds,
                     integrated_thresholds=cfg.integrated_thresholds,
-                    csv_paths=None,
+                    csv_paths=None,  # Use csv_dir for all CSVs
                 )
                 result = run_bollinger_exploration(exploration_config)
                 results.append(result)
@@ -133,7 +135,12 @@ class _Phase2Worker(QThread):
 
 
 class _MRAnalysisWorker(QThread):
-    """Compute Phase 2 full-period mean-reversion summary in a background thread."""
+    """Compute Phase 2 full-period mean-reversion summary in a background thread.
+
+    Re-runs ``run_backtest`` for each monthly CSV using the supplied strategy
+    override params, then aggregates the records via
+    ``analyze_all_months_mean_reversion`` to produce the all-period summary.
+    """
 
     finished_ok = Signal(object)  # MeanReversionSummary | None
     finished_error = Signal(str)
@@ -179,7 +186,13 @@ class _MRAnalysisWorker(QThread):
 
 
 class _BacktestWorker(QThread):
-    """Run a single ``run_backtest`` or ``run_all_months`` for タブ B."""
+    """Run a single ``run_backtest`` or ``run_all_months`` for タブ B (T-C).
+
+    Used by :class:`BacktestPanel` to evaluate the most recently accepted
+    exploration candidate without blocking the UI thread. Stop is exposed
+    only as run-button disable (T-C scope); mid-run interruption is
+    deferred to T-D.
+    """
 
     finished_single = Signal(object)  # BacktestRunArtifacts
     finished_all_months = Signal(object)  # AllMonthsResult
@@ -218,8 +231,7 @@ class _BacktestWorker(QThread):
                     f"All months backtest started: dir={self._csv_dir}"
                 )
                 result = run_all_months(
-                    csv_dir=self._csv_dir,
-                    **self._all_months_kwargs,
+                    csv_dir=self._csv_dir, **self._all_months_kwargs
                 )
                 self.finished_all_months.emit(result)
         except Exception as exc:
@@ -240,7 +252,7 @@ class ExploreMainWindow(QMainWindow):
         self._mr_analysis_worker: _MRAnalysisWorker | None = None
         self._backtest_worker: _BacktestWorker | None = None
         self._max_iterations: int = 0
-        self._current_phase: int = 0
+        self._current_phase: int = 0  # 0=idle, 1=Phase1, 2=Phase2
         self._phase1_config: BollingerLoopConfig | None = None
         self._phase1_results: list[BollingerExplorationResult] = []
 
@@ -270,12 +282,13 @@ class ExploreMainWindow(QMainWindow):
         self._backtest_panel.run_requested.connect(self._on_backtest_run)
         self._backtest_panel.stop_requested.connect(self._on_backtest_stop)
 
-        apply_terminal_dark_theme(self)
+        apply_dark_theme(self)
 
     def _on_run(self) -> None:
         csv_path = self._input_panel.get_csv_path()
         csv_paths = self._input_panel.get_csv_paths()
 
+        # When csv_paths is available, csv_path is derived from csv_paths[-1]
         if csv_paths:
             csv_path = csv_paths[-1]
         elif not csv_path:
@@ -312,6 +325,7 @@ class ExploreMainWindow(QMainWindow):
         self._phase1_config = config
         self._phase1_results = []
 
+        # Determine phase: Phase 1 if using selected CSV mode with csv_paths
         is_phase1 = csv_paths is not None and self._input_panel.get_csv_dir()
         self._current_phase = 1 if is_phase1 else 0
 
@@ -415,12 +429,16 @@ class ExploreMainWindow(QMainWindow):
             f"({loop_result.iterations} iterations)"
         )
 
+        # Store Phase 1 results for potential Phase 2
         self._phase1_results = list(loop_result.results)
 
+        # Push the latest accepted candidate to タブ B BacktestPanel.
+        # Prefer loop_result.adopted; fall back to the top-scored result.
         candidate = loop_result.adopted or self._best_phase1_result()
         if candidate is not None:
             self._push_candidate_to_backtest_panel(candidate.param_overrides)
 
+        # Enable "全期間で確認する" if Phase 1 with csv_dir available
         if (
             self._current_phase == 1
             and self._phase1_results
@@ -446,10 +464,16 @@ class ExploreMainWindow(QMainWindow):
         self._input_panel.stop_button.setEnabled(False)
         self._worker = None
 
+    # ------------------------------------------------------------------
+    # Phase 2: confirm all CSVs
+    # ------------------------------------------------------------------
+
     def _get_top_candidates(self, max_candidates: int = 5) -> list[dict[str, float]]:
+        """Extract unique top candidate param overrides from Phase 1 results."""
         if not self._phase1_results:
             return []
 
+        # Score by aggregate average_pips_per_month if available, else single total_pips
         def _score(r: BollingerExplorationResult) -> float:
             if r.aggregate_stats:
                 return r.aggregate_stats.average_pips_per_month
@@ -471,29 +495,25 @@ class ExploreMainWindow(QMainWindow):
         return candidates
 
     def _on_confirm_all(self) -> None:
+        """Start Phase 2: re-evaluate top candidates with all CSVs."""
         csv_dir = self._input_panel.get_csv_dir()
         if not csv_dir:
             QMessageBox.warning(
-                self,
-                "Phase 2 Error",
-                "CSV Dir is required for Phase 2.",
+                self, "Phase 2 Error", "CSV Dir is required for Phase 2."
             )
             return
 
         candidates = self._get_top_candidates()
         if not candidates:
             QMessageBox.warning(
-                self,
-                "Phase 2 Error",
-                "No Phase 1 results available for confirmation.",
+                self, "Phase 2 Error",
+                "No Phase 1 results available for confirmation."
             )
             return
 
         if not self._phase1_config:
             QMessageBox.warning(
-                self,
-                "Phase 2 Error",
-                "Phase 1 config not available.",
+                self, "Phase 2 Error", "Phase 1 config not available."
             )
             return
 
@@ -524,13 +544,13 @@ class ExploreMainWindow(QMainWindow):
         self._phase2_worker.start()
 
     def _on_phase2_candidate_done(
-        self,
-        index: int,
-        result: BollingerExplorationResult,
+        self, index: int, result: BollingerExplorationResult
     ) -> None:
         self._result_panel.add_phase2_result(index, result)
         self._result_panel.show_monthly_breakdown(result)
-        self._result_panel.set_status(f"Phase 2: candidate {index} evaluated")
+        self._result_panel.set_status(
+            f"Phase 2: candidate {index} evaluated"
+        )
         self._result_panel.append_log(
             f"Phase 2 candidate {index}: verdict={result.verdict}, "
             f"avg_pips={result.aggregate_stats.average_pips_per_month:.1f}"
@@ -539,8 +559,7 @@ class ExploreMainWindow(QMainWindow):
         )
 
     def _on_phase2_finished_ok(
-        self,
-        results: list[BollingerExplorationResult],
+        self, results: list[BollingerExplorationResult]
     ) -> None:
         self._result_panel.set_status(
             f"Phase 2 complete: {len(results)} candidate(s) evaluated"
@@ -548,6 +567,7 @@ class ExploreMainWindow(QMainWindow):
         self._result_panel.append_log(
             f"Phase 2 finished: {len(results)} candidate(s) confirmed"
         )
+        # Show monthly breakdown of the best Phase 2 result and summary
         if results:
             best = max(
                 results,
@@ -564,6 +584,7 @@ class ExploreMainWindow(QMainWindow):
         self._cleanup_phase2_worker()
 
     def _start_mr_analysis(self, best: BollingerExplorationResult) -> None:
+        """Kick off full-period MR analysis for the best Phase 2 candidate."""
         cfg = self._phase1_config
         if cfg is None or not cfg.csv_dir:
             return
@@ -611,6 +632,10 @@ class ExploreMainWindow(QMainWindow):
         self._current_phase = 0
         self._phase2_worker = None
 
+    # ------------------------------------------------------------------
+    # タブ B: Backtest 単発 (T-C, TASK-0139)
+    # ------------------------------------------------------------------
+
     def _best_phase1_result(self) -> BollingerExplorationResult | None:
         if not self._phase1_results:
             return None
@@ -633,6 +658,8 @@ class ExploreMainWindow(QMainWindow):
             param_overrides=param_overrides,
         )
 
+        # Also push the most recent CSV / CSV Dir as defaults so the user
+        # can run the candidate immediately from タブ B.
         csv_paths = self._input_panel.get_csv_paths()
         csv_dir = self._input_panel.get_csv_dir()
         if csv_paths:
@@ -679,17 +706,13 @@ class ExploreMainWindow(QMainWindow):
             csv_path_text = self._backtest_panel.get_csv_path()
             if not csv_path_text:
                 QMessageBox.warning(
-                    self,
-                    "Backtest Error",
-                    "Single CSV path is not set.",
+                    self, "Backtest Error", "Single CSV path is not set."
                 )
                 return
             csv_path = Path(csv_path_text)
             if not csv_path.exists():
                 QMessageBox.warning(
-                    self,
-                    "Backtest Error",
-                    f"CSV not found: {csv_path}",
+                    self, "Backtest Error", f"CSV not found: {csv_path}"
                 )
                 return
             single_config = BacktestRunConfig(
@@ -707,9 +730,7 @@ class ExploreMainWindow(QMainWindow):
             csv_dir_text = self._backtest_panel.get_csv_dir()
             if not csv_dir_text:
                 QMessageBox.warning(
-                    self,
-                    "Backtest Error",
-                    "CSV directory is not set.",
+                    self, "Backtest Error", "CSV directory is not set."
                 )
                 return
             csv_dir_path = Path(csv_dir_text)
@@ -756,14 +777,16 @@ class ExploreMainWindow(QMainWindow):
         self._backtest_worker.start()
 
     def _on_backtest_stop(self) -> None:
+        # T-C scope: Stop button is wired only to disable the run button
+        # while a backtest is in flight. Mid-run interruption of run_backtest
+        # / run_all_months is deferred to T-D.
         if self._backtest_worker is not None and self._backtest_worker.isRunning():
             self._backtest_panel.append_log(
                 "Stop requested (current backtest will run to completion)."
             )
 
     def _on_backtest_finished_single(
-        self,
-        artifacts: BacktestRunArtifacts,
+        self, artifacts: BacktestRunArtifacts
     ) -> None:
         self._backtest_panel.show_single_artifacts(artifacts)
         self._backtest_panel.set_status(
