@@ -1,0 +1,156 @@
+=======================================================
+mt4-watch-gui exe 化手順 (個人利用・コピー先 PC セットアップ)
+=======================================================
+
+最終更新: 2026-04-21 (v3)
+対象:     src/app_watch_gui.py
+spec:     mt4-watch-gui.spec (repo 直下)
+配布形式: onedir (PyInstaller COLLECT)
+
+
+------------------------------------------------------------
+0. 前提
+------------------------------------------------------------
+
+- Python 3.11+ がインストール済み (pyproject.toml の requires-python)
+- git がインストール済み
+- MT4 側の BridgeWriterEA は別途コピー/コンパイル済み
+
+
+------------------------------------------------------------
+1. リポジトリをクローンしてセットアップ
+------------------------------------------------------------
+
+# 任意の作業フォルダで
+git clone <repo-url> mt4-python-bridge
+cd mt4-python-bridge
+
+# 仮想環境作成
+python -m venv .venv
+.venv\Scripts\activate
+
+# 依存インストール (pyinstaller も含まれる)
+pip install -r requirements.txt
+
+
+------------------------------------------------------------
+2. config / .env の用意
+------------------------------------------------------------
+
+config/app.yaml はリポジトリに含まれているが、bridge.root の
+パスはコピー先 PC の MT4 Terminal ID に合わせて調整する。
+
+書き換え方:
+  (A) config/app.yaml の bridge.root を直接編集
+  (B) リポジトリルートに .env を置いて MT4_BRIDGE_ROOT を指定
+      例: .env
+        MT4_BRIDGE_ROOT=C:/Users/<USER>/AppData/Roaming/MetaQuotes/Terminal/<TERMINAL_ID>/MQL4/Files/mt4-python-bridge
+
+SL/TP は戦術ファイル側 (bollinger_range_A / bollinger_trend_B_params) が
+正本なので app.yaml に risk セクションは不要 (2026-04-21 v3 で削除済)。
+
+
+------------------------------------------------------------
+3. exe ビルド
+------------------------------------------------------------
+
+# spec を使って onedir でビルド
+pyinstaller mt4-watch-gui.spec
+
+# 成果物: dist/mt4-watch-gui/
+#   mt4-watch-gui.exe
+#   _internal/            (PyInstaller が自動生成する依存 dll 群)
+
+# ビルドログでエラーが無いこと、hidden import 漏れが無いことを確認
+# (特に bollinger_range_A / bollinger_trend_B / bollinger_combo_AB が
+#  collect_submodules('mt4_bridge.strategies') 経由で取り込まれる)
+
+初回は spec の console=False のままだと exe 実行時のエラーが見えづらい。
+問題が出たら mt4-watch-gui.spec の console=True に変更して再ビルドし、
+コマンドプロンプトから起動して stderr を確認する。
+
+
+------------------------------------------------------------
+4. 配布レイアウト (推奨)
+------------------------------------------------------------
+
+dist/mt4-watch-gui/ をそのまま使うか、以下のように並べて配布:
+
+  mt4-watch-gui/                ← このフォルダを丸ごとコピー配布
+  ├── mt4-watch-gui.exe
+  ├── _internal/                ← PyInstaller 依存物
+  ├── config/
+  │   └── app.yaml              ← リポジトリの config/app.yaml をコピー
+  ├── runtime/                  ← 空ディレクトリ (exe が state.json を書く)
+  └── .env                      ← MT4_BRIDGE_ROOT 等のローカル設定
+
+app_watch_gui.py の _infer_config_path は
+  Path(sys.executable).parent / "config" / "app.yaml"
+を最優先で探すので、exe と同階層に config/ を置けば OK。
+
+
+------------------------------------------------------------
+5. 実行 / 動作確認
+------------------------------------------------------------
+
+- mt4-watch-gui.exe をダブルクリックで起動
+- 画面上部の "Strategy" ラベルが bollinger_combo_AB になっていることを確認
+- "Config" ラベルが正しい app.yaml パスを指していることを確認
+- 「開始」ボタンで watch ループ開始、ログが流れるか確認
+- 「停止」で安全に停止
+
+
+------------------------------------------------------------
+6. トラブルシュート
+------------------------------------------------------------
+
+- 起動直後に落ちる / ウィンドウが出ない
+  → spec の console=True に変更して再ビルド、コマンドプロンプトから
+    exe を起動し stderr を確認
+
+- "Unsupported strategy: bollinger_combo_AB" 等の import エラー
+  → spec の hiddenimports に collect_submodules('mt4_bridge.strategies')
+    が入っているか確認。足りない戦術モジュールがあれば個別に追加:
+      hiddenimports += ['mt4_bridge.strategies.bollinger_combo_AB']
+
+- "config file not found"
+  → exe と同階層に config/app.yaml が無い。手順 4 のレイアウトに従う
+
+- MT4 との通信が繋がらない
+  → config/app.yaml の bridge.root、または .env の MT4_BRIDGE_ROOT を
+    実 MT4 Terminal ID に合わせる
+
+- PySide6 plugin 関連の警告 ("Could not find the Qt platform plugin")
+  → _internal/ 以下に platforms/qwindows.dll が含まれているか確認。
+    含まれていない場合は PyInstaller のバージョンを上げて再ビルド
+
+
+------------------------------------------------------------
+7. 更新時のリビルド手順
+------------------------------------------------------------
+
+src/ 以下の .py や mt4_bridge/strategies/*.py を更新した場合:
+
+# 古い build を削除
+rmdir /s /q build dist
+
+# 再ビルド
+pyinstaller mt4-watch-gui.spec
+
+# dist/mt4-watch-gui/ を本番フォルダへ上書きコピー
+# config/ と .env と runtime/ は残しておく
+
+
+------------------------------------------------------------
+8. 参考: 起動されるメイン経路
+------------------------------------------------------------
+
+app_watch_gui.py
+  └─ WatchWorker.run()
+       └─ app_watch.run_watch()
+            └─ load_app_config() で config/app.yaml を読込
+            └─ BridgeService で市場 snapshot / position snapshot を読込
+            └─ evaluate_signals() で戦術評価 (combo_AB = A + B の lane 分離)
+            └─ _build_decision_with_risk() で SL/TP 付与
+                  (SL/TP は戦術モジュール側 SL_PIPS/TP_PIPS 定数から)
+            └─ write_command() で MT4 へ command JSON を書き出し

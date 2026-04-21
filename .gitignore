@@ -42,6 +42,9 @@ Thumbs.db
 # =========================
 tmp/
 data/
+runtime/
+analysis/out/
+memo
 
 # 将来ここにコピーする可能性あり
 mt4_data/
