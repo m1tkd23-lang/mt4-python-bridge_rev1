@@ -43,7 +43,7 @@ class GenericRunnerMixin:
 
         range_reentry_blocks = self._create_range_reentry_blocks()
 
-        for current_row in dataset.rows:
+        for current_bar_index, current_row in enumerate(dataset.rows):
             bars_buffer.append(self._build_bar(current_row))
 
             if len(bars_buffer) < required_bars:
@@ -60,6 +60,7 @@ class GenericRunnerMixin:
                     intrabar_trade = self._check_intrabar_exit(
                         simulated_position=range_position,
                         current_row=current_row,
+                        current_bar_index=current_bar_index,
                     )
                     if intrabar_trade is not None:
                         executed_trades.append(intrabar_trade)
@@ -76,6 +77,7 @@ class GenericRunnerMixin:
                     intrabar_trade = self._check_intrabar_exit(
                         simulated_position=trend_position,
                         current_row=current_row,
+                        current_bar_index=current_bar_index,
                     )
                     if intrabar_trade is not None:
                         executed_trades.append(intrabar_trade)
@@ -90,6 +92,7 @@ class GenericRunnerMixin:
                     intrabar_trade = self._check_intrabar_exit(
                         simulated_position=legacy_position,
                         current_row=current_row,
+                        current_bar_index=current_bar_index,
                     )
                     if intrabar_trade is not None:
                         executed_trades.append(intrabar_trade)
@@ -147,6 +150,11 @@ class GenericRunnerMixin:
                     )
                 )
 
+                # accumulate unsuitable-bar counters on held positions
+                range_position = self._update_unsuitable_bars(range_position, decision)
+                trend_position = self._update_unsuitable_bars(trend_position, decision)
+                legacy_position = self._update_unsuitable_bars(legacy_position, decision)
+
                 if self._is_multi_lane_strategy():
                     (
                         range_position,
@@ -160,6 +168,7 @@ class GenericRunnerMixin:
                         trend_position=trend_position,
                         next_ticket=next_ticket,
                         point=dataset.point,
+                        current_bar_index=current_bar_index,
                     )
                 else:
                     (
@@ -172,6 +181,7 @@ class GenericRunnerMixin:
                         simulated_position=legacy_position,
                         next_ticket=next_ticket,
                         point=dataset.point,
+                        current_bar_index=current_bar_index,
                     )
 
                 if new_trade is not None:
@@ -186,6 +196,7 @@ class GenericRunnerMixin:
 
         if close_open_position_at_end:
             final_row = dataset.rows[-1]
+            final_bar_index = len(dataset.rows) - 1
 
             if self._is_multi_lane_strategy():
                 if range_position is not None:
@@ -195,6 +206,7 @@ class GenericRunnerMixin:
                         exit_price=final_row.close,
                         exit_reason="forced_end_of_data",
                         exit_decision=None,
+                        exit_absolute_bar_index=final_bar_index,
                     )
                     executed_trades.append(forced_trade)
                     range_position = None
@@ -206,6 +218,7 @@ class GenericRunnerMixin:
                         exit_price=final_row.close,
                         exit_reason="forced_end_of_data",
                         exit_decision=None,
+                        exit_absolute_bar_index=final_bar_index,
                     )
                     executed_trades.append(forced_trade)
                     trend_position = None
@@ -217,6 +230,7 @@ class GenericRunnerMixin:
                         exit_price=final_row.close,
                         exit_reason="forced_end_of_data",
                         exit_decision=None,
+                        exit_absolute_bar_index=final_bar_index,
                     )
                     executed_trades.append(forced_trade)
                     legacy_position = None
@@ -249,6 +263,41 @@ class GenericRunnerMixin:
         return replace(
             simulated_position,
             entry_bar_index=simulated_position.entry_bar_index + 1,
+        )
+
+    def _update_unsuitable_bars(
+        self,
+        simulated_position: SimulatedPosition | None,
+        decision: SignalDecision,
+    ) -> SimulatedPosition | None:
+        if simulated_position is None:
+            return None
+        obs = decision.debug_metrics
+        if not isinstance(obs, dict):
+            return simulated_position
+        band_walk = bool(obs.get("range_unsuitable_flag_band_walk"))
+        one_side = bool(obs.get("range_unsuitable_flag_one_side_stay"))
+        bandwidth = bool(obs.get("range_unsuitable_flag_bandwidth_expansion"))
+        slope_accel = bool(obs.get("range_unsuitable_flag_slope_acceleration"))
+        if not (band_walk or one_side or bandwidth or slope_accel):
+            return simulated_position
+        return replace(
+            simulated_position,
+            unsuitable_bars_band_walk=(
+                simulated_position.unsuitable_bars_band_walk + (1 if band_walk else 0)
+            ),
+            unsuitable_bars_one_side_stay=(
+                simulated_position.unsuitable_bars_one_side_stay + (1 if one_side else 0)
+            ),
+            unsuitable_bars_bandwidth_expansion=(
+                simulated_position.unsuitable_bars_bandwidth_expansion
+                + (1 if bandwidth else 0)
+            ),
+            unsuitable_bars_slope_acceleration=(
+                simulated_position.unsuitable_bars_slope_acceleration
+                + (1 if slope_accel else 0)
+            ),
+            unsuitable_bars_total=simulated_position.unsuitable_bars_total + 1,
         )
 
     def _normalize_decisions(

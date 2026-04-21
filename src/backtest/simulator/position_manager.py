@@ -59,6 +59,7 @@ class PositionManagerMixin:
         decision: SignalDecision,
         next_ticket: int,
         point: float,
+        entry_absolute_bar_index: int | None = None,
     ) -> tuple[SimulatedPosition, int]:
         if decision.action not in (SignalAction.BUY, SignalAction.SELL):
             raise BacktestSimulationError(
@@ -152,6 +153,7 @@ class PositionManagerMixin:
                 "latest_distance",
             ),
             entry_prev_distance=self._get_debug_float(debug_metrics, "prev_distance"),
+            entry_absolute_bar_index=entry_absolute_bar_index,
         )
         return position, next_ticket + 1
 
@@ -162,6 +164,7 @@ class PositionManagerMixin:
         simulated_position: SimulatedPosition | None,
         next_ticket: int,
         point: float,
+        current_bar_index: int | None = None,
     ) -> tuple[SimulatedPosition | None, ExecutedTrade | None, int]:
         if simulated_position is None:
             if decision.action in (SignalAction.BUY, SignalAction.SELL):
@@ -170,6 +173,7 @@ class PositionManagerMixin:
                     decision=decision,
                     next_ticket=next_ticket,
                     point=point,
+                    entry_absolute_bar_index=current_bar_index,
                 )
                 return new_position, None, next_ticket
 
@@ -182,6 +186,7 @@ class PositionManagerMixin:
                 exit_price=current_row.close,
                 exit_reason="signal_close",
                 exit_decision=decision,
+                exit_absolute_bar_index=current_bar_index,
             )
             return None, closed_trade, next_ticket
 
@@ -195,6 +200,7 @@ class PositionManagerMixin:
         trend_position: SimulatedPosition | None,
         next_ticket: int,
         point: float,
+        current_bar_index: int | None = None,
     ) -> tuple[
         SimulatedPosition | None,
         SimulatedPosition | None,
@@ -213,6 +219,7 @@ class PositionManagerMixin:
                     decision=decision,
                     next_ticket=next_ticket,
                     point=point,
+                    entry_absolute_bar_index=current_bar_index,
                 )
                 return new_position, trend_position, None, next_ticket
 
@@ -226,6 +233,7 @@ class PositionManagerMixin:
                     exit_price=current_row.close,
                     exit_reason="signal_close",
                     exit_decision=decision,
+                    exit_absolute_bar_index=current_bar_index,
                 )
                 return None, trend_position, closed_trade, next_ticket
 
@@ -241,6 +249,7 @@ class PositionManagerMixin:
                     decision=decision,
                     next_ticket=next_ticket,
                     point=point,
+                    entry_absolute_bar_index=current_bar_index,
                 )
                 return range_position, new_position, None, next_ticket
 
@@ -254,6 +263,7 @@ class PositionManagerMixin:
                     exit_price=current_row.close,
                     exit_reason="signal_close",
                     exit_decision=decision,
+                    exit_absolute_bar_index=current_bar_index,
                 )
                 return range_position, None, closed_trade, next_ticket
 
@@ -268,6 +278,7 @@ class PositionManagerMixin:
         exit_price: float,
         exit_reason: str,
         exit_decision: SignalDecision | None,
+        exit_absolute_bar_index: int | None = None,
     ) -> ExecutedTrade:
         if simulated_position.position_type == "buy":
             pips = (exit_price - simulated_position.entry_price) / self._pip_size
@@ -387,6 +398,18 @@ class PositionManagerMixin:
             mfe_pips=mfe_pips,
             mae_pips=mae_pips,
             holding_bars=holding_bars,
+            exit_subtype=exit_decision.exit_subtype if exit_decision else None,
+            entry_bar_index=simulated_position.entry_absolute_bar_index,
+            exit_bar_index=exit_absolute_bar_index,
+            unsuitable_bars_band_walk=simulated_position.unsuitable_bars_band_walk,
+            unsuitable_bars_one_side_stay=simulated_position.unsuitable_bars_one_side_stay,
+            unsuitable_bars_bandwidth_expansion=(
+                simulated_position.unsuitable_bars_bandwidth_expansion
+            ),
+            unsuitable_bars_slope_acceleration=(
+                simulated_position.unsuitable_bars_slope_acceleration
+            ),
+            unsuitable_bars_total=simulated_position.unsuitable_bars_total,
         )
 
     def _compute_mfe_pips(

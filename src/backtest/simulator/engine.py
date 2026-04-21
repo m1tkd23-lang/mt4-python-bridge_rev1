@@ -13,7 +13,6 @@ from backtest.simulator.models import (
 from backtest.simulator.position_manager import PositionManagerMixin
 from backtest.simulator.snapshots import SnapshotBuilderMixin
 from backtest.simulator.stats import StatsMixin
-from backtest.simulator.v7_runner import V7RunnerMixin
 
 
 class BacktestSimulator(
@@ -23,7 +22,6 @@ class BacktestSimulator(
     PositionManagerMixin,
     StatsMixin,
     GenericRunnerMixin,
-    V7RunnerMixin,
 ):
     def __init__(
         self,
@@ -55,22 +53,10 @@ class BacktestSimulator(
         if self._tp_pips <= 0:
             raise BacktestSimulationError("tp_pips must be greater than zero")
 
-        if self._is_v7_strategy():
-            return self._run_v7_fast_path(
-                dataset=dataset,
-                close_open_position_at_end=close_open_position_at_end,
-            )
-
         return self._run_generic_path(
             dataset=dataset,
             close_open_position_at_end=close_open_position_at_end,
         )
-
-    def _is_v7_strategy(self) -> bool:
-        return self._strategy_name in {
-            "bollinger_range_v7",
-            "bollinger_range_v7_1",
-        }
 
     def _is_multi_lane_strategy(self) -> bool:
         return self._strategy_name in {

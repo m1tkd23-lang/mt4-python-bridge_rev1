@@ -90,6 +90,7 @@ def _build_signal_decision(
     trend_current_ma: float,
     distance_from_middle: float,
     debug_metrics: dict[str, object] | None = None,
+    exit_subtype: str | None = None,
 ) -> SignalDecision:
     return SignalDecision(
         strategy_name=strategy_name,
@@ -111,6 +112,7 @@ def _build_signal_decision(
         trend_current_ma=trend_current_ma,
         distance_from_middle=distance_from_middle,
         debug_metrics=debug_metrics,
+        exit_subtype=exit_subtype,
     )
 
 
@@ -652,6 +654,7 @@ def evaluate_bollinger_range_v4_4(
                     f" band_width={latest_band_width})"
                     + reason_suffix
                 ),
+                exit_subtype="range_failure_exit",
                 **common_kwargs,
             )
 
@@ -671,6 +674,7 @@ def evaluate_bollinger_range_v4_4(
                     f" band_width={latest_band_width})"
                     + reason_suffix
                 ),
+                exit_subtype="range_failure_exit",
                 **common_kwargs,
             )
 
@@ -683,6 +687,7 @@ def evaluate_bollinger_range_v4_4(
                     f" latest close {latest_bar.close} >= middle {middle_band}"
                     + reason_suffix
                 ),
+                exit_subtype="middle_touch_exit",
                 **common_kwargs,
             )
 
@@ -694,6 +699,7 @@ def evaluate_bollinger_range_v4_4(
                     f" latest close {latest_bar.close} <= middle {middle_band}"
                     + reason_suffix
                 ),
+                exit_subtype="middle_touch_exit",
                 **common_kwargs,
             )
 
@@ -703,6 +709,7 @@ def evaluate_bollinger_range_v4_4(
                 action=SignalAction.CLOSE,
                 reason="buy position closed because state switched to trend_down"
                 + reason_suffix,
+                exit_subtype="opposite_state_exit",
                 **common_kwargs,
             )
 
@@ -711,6 +718,7 @@ def evaluate_bollinger_range_v4_4(
                 action=SignalAction.CLOSE,
                 reason="sell position closed because state switched to trend_up"
                 + reason_suffix,
+                exit_subtype="opposite_state_exit",
                 **common_kwargs,
             )
 
@@ -731,6 +739,7 @@ def evaluate_bollinger_range_v4_4(
         return _build_signal_decision(
             action=SignalAction.CLOSE,
             reason="sell signal detected while buy position exists" + reason_suffix,
+            exit_subtype="opposite_signal_exit",
             **common_kwargs,
         )
 
@@ -744,6 +753,7 @@ def evaluate_bollinger_range_v4_4(
         return _build_signal_decision(
             action=SignalAction.CLOSE,
             reason="buy signal detected while sell position exists" + reason_suffix,
+            exit_subtype="opposite_signal_exit",
             **common_kwargs,
         )
 

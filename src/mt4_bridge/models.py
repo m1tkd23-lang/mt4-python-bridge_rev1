@@ -143,6 +143,7 @@ class SignalDecision:
     # lane / subtype fields
     entry_lane: str | None = None
     entry_subtype: str | None = None
+    exit_subtype: str | None = None
 
     # shared analysis fields
     market_state: str | None = None

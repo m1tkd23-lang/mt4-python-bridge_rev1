@@ -22,6 +22,14 @@ class SimulatedPosition:
     tp_price: float | None
     trade_id: str
     entry_bar_index: int = 0
+    entry_absolute_bar_index: int | None = None
+
+    # Counts bars during holding period where range_observation flags were True
+    unsuitable_bars_band_walk: int = 0
+    unsuitable_bars_one_side_stay: int = 0
+    unsuitable_bars_bandwidth_expansion: int = 0
+    unsuitable_bars_slope_acceleration: int = 0
+    unsuitable_bars_total: int = 0
 
     entry_signal_reason: str | None = None
     entry_market_state: str | None = None
@@ -145,6 +153,20 @@ class ExecutedTrade:
     mfe_pips: float | None = None
     mae_pips: float | None = None
     holding_bars: int | None = None
+
+    # exit signal subtype (TASK: BT-exit-breakdown)
+    exit_subtype: str | None = None
+
+    # absolute bar positions in the dataset (TASK: BT-trade-bar-linkage)
+    entry_bar_index: int | None = None
+    exit_bar_index: int | None = None
+
+    # counts of bars during the holding period where range_observation flags were True
+    unsuitable_bars_band_walk: int | None = None
+    unsuitable_bars_one_side_stay: int | None = None
+    unsuitable_bars_bandwidth_expansion: int | None = None
+    unsuitable_bars_slope_acceleration: int | None = None
+    unsuitable_bars_total: int | None = None
 
 
 @dataclass(frozen=True)
