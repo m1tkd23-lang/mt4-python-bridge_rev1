@@ -1,6 +1,6 @@
 # config\app.yaml
 bridge:
-  root: "C:/Users/tokuda/AppData/Roaming/MetaQuotes/Terminal/F1DD1D6E7C4A311D1B1CA0D34E33291D/MQL4/Files/mt4-python-bridge"
+  root: "C:/Users/toku/AppData/Roaming/MetaQuotes/Terminal/F1DD1D6E7C4A311D1B1CA0D34E33291D/MQL4/Files/mt4-python-bridge"
   market_snapshot_filename: "market_snapshot.json"
   runtime_status_filename: "runtime_status.json"
   position_snapshot_filename: "position_snapshot.json"
