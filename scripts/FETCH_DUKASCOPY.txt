@@ -1,0 +1,137 @@
+=======================================================
+Dukascopy 過去データ取得ガイド
+=======================================================
+
+目的:
+  Dukascopy 公式配布の tick → 5 分足 bid データを取得し、
+  本プロジェクト BT の連結 BT に食わせるための月別 CSV を作る。
+
+出力フォーマット:
+  data/USDJPY-cd5_dukascopy_monthly/
+    USDJPY-cd5_dukascopy_2024-01.csv
+    USDJPY-cd5_dukascopy_2024-02.csv
+    ...
+
+形式は既存 data/USDJPY-cd5_20250521_monthly/*.csv と同一(読込互換):
+  YYYY.MM.DD,HH:MM,O,H,L,C,volume
+
+時刻は FXTF MT4 サーバー時刻 (Europe/Athens, EET/EEST DST 自動切替) に変換済み。
+これにより A戦術時刻フィルタ {5,7,13} / B戦術 {4,8,10} がそのまま有効。
+
+
+------------------------------------------------------------
+1. 依存ライブラリのインストール
+------------------------------------------------------------
+
+requirements.txt に dukascopy-python / pandas は追記済。venv 有効化後:
+
+    pip install -r requirements.txt
+
+初回は dukascopy-python / pandas / numpy がインストールされる。
+
+
+------------------------------------------------------------
+2. データ取得 (1 期間あたり 1 コマンド)
+------------------------------------------------------------
+
+基本:
+    PYTHONPATH=src .venv/Scripts/python.exe scripts/fetch_dukascopy_data.py \
+        --start 2024-01-01 --end 2024-12-31
+
+PowerShell の場合:
+    $env:PYTHONPATH="src"
+    .\.venv\Scripts\python.exe scripts\fetch_dukascopy_data.py --start 2024-01-01 --end 2024-12-31
+
+オプション:
+    --start YYYY-MM-DD  取得開始日 (UTC)
+    --end   YYYY-MM-DD  取得終了日 (UTC、その日の 23:59 まで)
+
+注意:
+    - 期間を広くすると取得時間が長くなる (2024 年 1 年で目安 3〜10 分、回線次第)
+    - Dukascopy のサーバーに負荷をかけないよう 1 年ずつ区切って取ることを推奨
+    - 実行中は進捗が出る (月別ファイルを書き出すたびに [write] メッセージ)
+
+
+------------------------------------------------------------
+3. 推奨取得計画
+------------------------------------------------------------
+
+OOS 検証のため、以下の範囲を段階的に取得:
+
+  Step 1 (最優先):
+    --start 2024-01-01 --end 2024-12-31
+    → 2025-05〜2026-04 の直前 12 ヶ月の OOS
+
+  Step 2:
+    --start 2023-01-01 --end 2023-12-31
+    → 円安進行期の OOS
+
+  Step 3:
+    --start 2022-01-01 --end 2022-12-31
+    → USDJPY 急騰・為替介入相場 (最も厳しいテスト)
+
+  Step 4 (任意):
+    --start 2020-01-01 --end 2021-12-31
+    → COVID 以降のレンジ-トレンド切替期
+
+
+------------------------------------------------------------
+4. 取得後の連結 BT
+------------------------------------------------------------
+
+取得 CSV は既存の connected-BT 経路でそのまま使える。
+
+Python:
+    from pathlib import Path
+    from backtest.csv_loader import load_historical_bars_csv_multi
+    from backtest.simulator import BacktestSimulator, IntrabarFillPolicy
+
+    dir_path = Path("data/USDJPY-cd5_dukascopy_monthly")
+    paths = sorted(dir_path.glob("*.csv"))
+    ds = load_historical_bars_csv_multi(paths)
+
+    sim = BacktestSimulator(
+        strategy_name="bollinger_combo_AB",
+        symbol="USDJPY", timeframe="M5",
+        pip_size=0.01, sl_pips=999.0, tp_pips=999.0,  # 戦術定数優先
+        intrabar_fill_policy=IntrabarFillPolicy.CONSERVATIVE,
+    )
+    res = sim.run(ds, close_open_position_at_end=True)
+    print(f"total {res.stats.total_pips:+.1f} pips  trades {len(res.trades)}")
+
+GUI 経由 (explore_gui.py):
+    - 1. Backtest 単発タブ
+    - 2. Strategy = bollinger_combo_AB
+    - 3. CSV Dir を data/USDJPY-cd5_dukascopy_monthly に設定 → All months + Connect CSVs をチェック
+    - 4. Run backtest
+
+
+------------------------------------------------------------
+5. トラブルシュート
+------------------------------------------------------------
+
+- "No data returned from Dukascopy"
+  → 指定期間にデータなし / 週末のみ指定している。平日を含む範囲に修正
+
+- "ConnectionError" / "HTTPError"
+  → Dukascopy サーバー一時障害、数時間後に再試行。あるいは回線確認
+
+- 時刻が 1 時間ずれている気がする
+  → スクリプトは Europe/Athens 変換しているので FXTF MT4 と一致するはず。
+     一致しないなら FETCH_DUKASCOPY.txt の FXTF_BROKER_TZ を見直す
+
+- 出力 CSV の OHLC の小数桁数がおかしい
+  → USDJPY は 3 桁を固定。他通貨ペアで使う時は PRICE_DECIMALS を 5 に変更
+
+- dukascopy-python の API 名が変わった
+  → pip でバージョン確認、スクリプト内の import / fetch シグネチャを合わせる
+
+
+------------------------------------------------------------
+6. 既存 CSV との併用
+------------------------------------------------------------
+
+Dukascopy 版と FXTF 手動 export 版を連結して BT したい場合、
+USDJPY-cd5_20250521_monthly/ と USDJPY-cd5_dukascopy_monthly/ の両ディレクトリから
+ファイルを集めて load_historical_bars_csv_multi に渡せば、時刻順に連結されて
+重複バーは自動的に後勝ちで統合される。

@@ -17,13 +17,16 @@ from mt4_bridge.signal_exceptions import SignalEngineError
 from mt4_bridge.strategies.bollinger_range_v4_4_params import (  # noqa: F401
     BAND_WALK_LOOKBACK_BARS,
     BAND_WIDTH_EXPANSION_LOOKBACK_BARS,
+    BAR_MINUTES,
     BOLLINGER_EXTREME_SIGMA,
     BOLLINGER_PERIOD,
     BOLLINGER_SIGMA,
     CLOSE_ON_OPPOSITE_TREND_STATE,
     ENABLE_RANGE_EXTREME_TOUCH_ENTRY,
     ENABLE_RANGE_FAILURE_EXIT,
+    ENABLE_TIME_STOP_EXIT,
     EXIT_ON_RANGE_MIDDLE_BAND,
+    MAX_HOLDING_BARS,
     MIDDLE_CROSS_LOOKBACK_BARS,
     ONE_SIDE_STAY_LOOKBACK_BARS,
     RANGE_BAND_WIDTH_THRESHOLD,
@@ -636,6 +639,25 @@ def evaluate_bollinger_range_v4_4(
 
     current_type = current_position.position_type.lower()
     entry_price = current_position.open_price
+
+    # v4.5 追加: 時間 stop (max holding bars)
+    # open_time と latest_bar.time の差分から保有バー数を計算し、
+    # MAX_HOLDING_BARS 以上経過していれば強制撤退する。
+    if ENABLE_TIME_STOP_EXIT and current_position.open_time is not None:
+        elapsed_minutes = (latest_bar.time - current_position.open_time).total_seconds() / 60.0
+        elapsed_bars = elapsed_minutes / float(BAR_MINUTES)
+        if elapsed_bars >= MAX_HOLDING_BARS:
+            return _build_signal_decision(
+                action=SignalAction.CLOSE,
+                reason=(
+                    f"{current_type} position closed by time stop:"
+                    f" elapsed_bars={elapsed_bars:.1f} >= MAX_HOLDING_BARS={MAX_HOLDING_BARS}"
+                    f" (open_time={current_position.open_time}, latest_bar_time={latest_bar.time})"
+                    + reason_suffix
+                ),
+                exit_subtype="time_stop_exit",
+                **common_kwargs,
+            )
 
     if ENABLE_RANGE_FAILURE_EXIT and market_state == "range":
         if current_type == "buy" and _range_buy_failure_exit(

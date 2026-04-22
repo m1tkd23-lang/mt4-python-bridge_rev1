@@ -52,11 +52,12 @@ CLOSE_ON_OPPOSITE_TREND_STATE = True
 # レンジ回帰を狙ったポジションが失敗した時だけ早期撤退する
 # adverse_move_threshold = band_width * ratio
 # range_failure_exit は保険として有効(崩壊月を抑える役割)だが、
-# 現行 0.28 は敏感すぎて平均 -7 pips の「過敏ストップ」になる副作用あり。
-# 2026-04-21 実験で OFF にすると総 pips は微改善(+49)だが崩壊月が 1→3 に増加。
-# 次はラッパー側で環境変数から上書きして値調整を測定する。
+# 過敏すぎると middle 回帰で勝つはずの玉を -6 pips で切って機会損失になる。
+# 2026-04-22 両データセット横断スイープ (0.0/0.2/0.28/0.4/0.6/1.0):
+#   ratio=0.60 が総pips +1182.4, 最悪月 -48.7, 崩壊月 7 で全指標ベスト。
+#   現行 0.28 は DUK 2024-07 で -113.4 の巨大崩壊を出す谷値だった。
 ENABLE_RANGE_FAILURE_EXIT = True
-RANGE_FAILURE_ADVERSE_MOVE_RATIO = 0.28
+RANGE_FAILURE_ADVERSE_MOVE_RATIO = 0.60
 
 # =========================
 # v4.4 追加: 3σタッチ即時エントリー(無効化)
@@ -64,6 +65,21 @@ RANGE_FAILURE_ADVERSE_MOVE_RATIO = 0.28
 # 2026-04-21 方針変更: 2σ再突入エントリーのみに一本化
 # (3σ即時は逆行リスクが大きく崩壊月の種となるため採用しない)
 ENABLE_RANGE_EXTREME_TOUCH_ENTRY = False
+
+# =========================
+# v4.5 追加: 時間 stop (max holding bars)
+# =========================
+# 保有バー 13+ で勝率 26% / 平均 -5.25 pips と完全負け領域 (2026-04-22 実測)。
+# 5min×N bar 以上経過しても中央回帰に届かないポジションは強制撤退する。
+# BT と本番で同じロジックを使うため、latest_bar.time と position.open_time の
+# 差分(分) を BAR_MINUTES で割ってバー数換算する (週末ギャップ影響は小さい)。
+# 2026-04-23 sweep (N=8/10/12/15/20/30/50/OFF):
+#   N=20 が総pips +1333.3, 最悪月 -49.4, 崩壊月 6 (OFF比 pips +60 / 崩壊-1) で最良。
+#   N=12/15 は早切りすぎで途中勝ちも潰し pips 逆効果。
+#   真のノイズは 21本以上の長時間保持で、N=20 がちょうどそこを遮断する。
+ENABLE_TIME_STOP_EXIT = True
+MAX_HOLDING_BARS = 20
+BAR_MINUTES = 5  # M5 timeframe
 
 
 # =========================

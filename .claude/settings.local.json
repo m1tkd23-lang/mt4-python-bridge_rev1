@@ -7,7 +7,32 @@
       "Bash(PYTHONPATH=src .venv/Scripts/python.exe -m pytest tests --tb=short)",
       "Bash(PYTHONPATH=src .venv/Scripts/python.exe -m pytest tests -q)",
       "Bash(wait *)",
-      "Bash(grep -E '^\\(runtime/|analysis/|memo$\\)')"
+      "Bash(grep -E '^\\(runtime/|analysis/|memo$\\)')",
+      "Bash(.venv/Scripts/python.exe scripts/fetch_dukascopy_data.py --help)",
+      "Bash(taskkill //F //IM python.exe)",
+      "Bash(.venv/Scripts/python.exe -m backtest.runner --csv-dir \"data/USDJPY-cd5_20250521_monthly\" --strategy bollinger_range_A --symbol USDJPY --timeframe M5 --pip-size 0.01 --sl-pips 20.0 --tp-pips 20.0)",
+      "Bash(.venv/Scripts/python.exe -m backtest.runner --csv-dir \"data/USDJPY-cd5_dukascopy_monthly\" --strategy bollinger_range_A --symbol USDJPY --timeframe M5 --pip-size 0.01 --sl-pips 20.0 --tp-pips 20.0)",
+      "Bash(mkdir -p analysis/out/A_dukascopy_tradelog)",
+      "Bash(.venv/Scripts/python.exe -m backtest.runner --csv-dir \"data/USDJPY-cd5_dukascopy_monthly\" --strategy bollinger_range_A --symbol USDJPY --timeframe M5 --pip-size 0.01 --sl-pips 20.0 --tp-pips 20.0 --trade-log-dir analysis/out/A_dukascopy_tradelog --show-trades 0)",
+      "Bash(.venv/Scripts/python.exe -m backtest.runner --csv-dir \"data/USDJPY-cd5_dukascopy_monthly\" --strategy bollinger_range_A --symbol USDJPY --timeframe M5 --pip-size 0.01 --sl-pips 20.0 --tp-pips 20.0 --show-trades 0)",
+      "Bash(.venv/Scripts/python.exe -m backtest.runner --csv-dir \"data/USDJPY-cd5_20250521_monthly\" --strategy bollinger_range_A --symbol USDJPY --timeframe M5 --pip-size 0.01 --sl-pips 20.0 --tp-pips 20.0 --show-trades 0)",
+      "Bash(mkdir -p analysis/out/A_broker_tradelog)",
+      "Bash(.venv/Scripts/python.exe -m backtest.runner --csv-dir \"data/USDJPY-cd5_20250521_monthly\" --strategy bollinger_range_A --symbol USDJPY --timeframe M5 --pip-size 0.01 --sl-pips 20.0 --tp-pips 20.0 --trade-log-dir analysis/out/A_broker_tradelog --show-trades 0)",
+      "Bash(.venv/Scripts/python.exe analysis/out/exit_sweep/sweep.py)",
+      "Bash(.venv/Scripts/python.exe analysis/out/exit_sweep/sltp_sweep.py)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe analysis/out/exit_sweep/sltp_sweep.py)",
+      "Bash(.venv/Scripts/python.exe -m backtest.runner --csv-dir \"data/USDJPY-cd5_dukascopy_monthly\" --strategy bollinger_combo_AB --compare-ab --symbol USDJPY --timeframe M5 --pip-size 0.01 --sl-pips 20.0 --tp-pips 25.0 --show-trades 0)",
+      "Bash(.venv/Scripts/python.exe -m backtest.runner --csv-dir \"data/USDJPY-cd5_20250521_monthly\" --strategy bollinger_combo_AB --compare-ab --symbol USDJPY --timeframe M5 --pip-size 0.01 --sl-pips 20.0 --tp-pips 25.0 --show-trades 0)",
+      "Bash(mkdir -p analysis/out/B_duk_tradelog analysis/out/B_brk_tradelog)",
+      "Bash(.venv/Scripts/python.exe -m backtest.runner --csv-dir \"data/USDJPY-cd5_dukascopy_monthly\" --strategy bollinger_trend_B --symbol USDJPY --timeframe M5 --pip-size 0.01 --sl-pips 20.0 --tp-pips 40.0 --trade-log-dir analysis/out/B_duk_tradelog --show-trades 0)",
+      "Bash(.venv/Scripts/python.exe -m backtest.runner --csv-dir \"data/USDJPY-cd5_20250521_monthly\" --strategy bollinger_trend_B --symbol USDJPY --timeframe M5 --pip-size 0.01 --sl-pips 20.0 --tp-pips 40.0 --trade-log-dir analysis/out/B_brk_tradelog --show-trades 0)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe analysis/out/exit_sweep/b_h1_sweep.py)",
+      "Bash(rm -rf analysis/out/A_opt_duk_tradelog analysis/out/A_opt_brk_tradelog)",
+      "Bash(mkdir -p analysis/out/A_opt_duk_tradelog analysis/out/A_opt_brk_tradelog)",
+      "Bash(.venv/Scripts/python.exe -m backtest.runner --csv-dir \"data/USDJPY-cd5_dukascopy_monthly\" --strategy bollinger_range_A --symbol USDJPY --timeframe M5 --pip-size 0.01 --sl-pips 20.0 --tp-pips 25.0 --trade-log-dir analysis/out/A_opt_duk_tradelog --show-trades 0)",
+      "Bash(.venv/Scripts/python.exe -m backtest.runner --csv-dir \"data/USDJPY-cd5_20250521_monthly\" --strategy bollinger_range_A --symbol USDJPY --timeframe M5 --pip-size 0.01 --sl-pips 20.0 --tp-pips 25.0 --trade-log-dir analysis/out/A_opt_brk_tradelog --show-trades 0)",
+      "Bash(.venv/Scripts/python.exe -m backtest.runner --csv \"data/USDJPY-cd5_dukascopy_monthly/USDJPY-cd5_dukascopy_2024-07.csv\" --strategy bollinger_range_A --symbol USDJPY --timeframe M5 --pip-size 0.01 --sl-pips 20.0 --tp-pips 25.0 --show-trades 0)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe analysis/out/exit_sweep/timestop_sweep.py)"
     ]
   }
 }

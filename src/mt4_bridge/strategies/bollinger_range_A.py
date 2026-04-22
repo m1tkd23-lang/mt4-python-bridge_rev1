@@ -42,14 +42,35 @@ A_H1_LOOKBACK_BARS = 60
 A_H1_TREND_THRESHOLD_PIPS = 15.0  # 2026-04-21 BT 比較で最良 (崩壊月数×総pips のバランス)
 A_PIP_MULTIPLIER = 100.0          # USDJPY 用 (他通貨対応時は要修正)
 
+# --- 対策⑤: D24 コンテキストフィルタ (日足逆張り禁止) ---
+# 対策④(H1)では catch できない週足レベルのトレンドを遮断する。
+# 直近 288 本 (5 分足 × 288 = 24 時間 ≈ 日足 1 本) の close 変化で
+# 日足トレンドを近似し、逆方向の BB 逆張りエントリーを見送る。
+# 2026-04-22 検証: dukascopy 2024 では +121.7 改善だが broker 2025-26 で
+# -337.3 悪化 (機会損失)。24ヶ月合計 -215.6 pips で過学習と判断し OFF。
+A_D24_TREND_FILTER_ENABLED = False
+A_D24_LOOKBACK_BARS = 288
+A_D24_TREND_THRESHOLD_PIPS = 40.0
+
+# --- 対策⑥: 過剰展開下落時の SELL 抑制 (底拾い禁止) ---
+# 2026-04-22 検証: 対策⑤と同じ理由で OFF。
+A_D24_BOTTOM_SELL_BLOCK_ENABLED = False
+A_D24_BOTTOM_SELL_MOM_THRESHOLD_PIPS = -80.0
+
 # ===================================================================
 # リスク設定 (戦術固有の SL/TP)
 # ===================================================================
-# A戦術はレンジ反転なので SL/TP は対称の狭め。
+# A戦術はレンジ反転ベースだが、TP を SL より広く取って R:R=1.25 とする。
 # これは BT / ライブ双方で戦術固有値として使われ、
 # config/app.yaml の risk.sl_pips/tp_pips はフォールバック扱い。
+#
+# 2026-04-22 SL/TP 25パターン sweep (DUK 2024 + BRK 2025-26 の 24ヶ月):
+#   SL=20/TP=25 (rr=1.25) が総pips +1273, 最悪月 -49.4, 崩壊月 7 で全候補中最良。
+#   現行 20/20 との比較: 総pips +91 改善、最悪月はほぼ同等 (-48.7→-49.4)。
+#   - SL=20 が sweet spot (10は浅すぎ worst -100〜, 30は深すぎ pips 減)
+#   - TP=25 が山頂 (20→25 で +91, 25→30 で -47 と逆戻り)
 SL_PIPS = 20.0
-TP_PIPS = 20.0
+TP_PIPS = 25.0
 
 
 def required_bars() -> int:
@@ -151,6 +172,62 @@ def evaluate_bollinger_range_A(
                     f"A strategy SELL suppressed because H1 is in uptrend:"
                     f" last-{A_H1_LOOKBACK_BARS}-bar mom=+{h1_mom_pips:.2f} pips"
                     f" (threshold=+{A_H1_TREND_THRESHOLD_PIPS});"
+                    f" original decision: {decision.reason}"
+                )
+
+    # A戦術 gating #5 (対策⑤): D24 コンテキストフィルタ(日足逆張り禁止)
+    # 直近 288 本 (=24時間 ≈ 日足1本) の close 変化が閾値を超えて
+    # 逆方向に流れている場合、その方向への BB 逆張りエントリーは見送る
+    if (
+        A_D24_TREND_FILTER_ENABLED
+        and action in (SignalAction.BUY, SignalAction.SELL)
+    ):
+        bars = market_snapshot.bars
+        if len(bars) >= A_D24_LOOKBACK_BARS + 1:
+            d24_mom_pips = (
+                bars[-1].close - bars[-(A_D24_LOOKBACK_BARS + 1)].close
+            ) * A_PIP_MULTIPLIER
+            if (
+                action == SignalAction.BUY
+                and d24_mom_pips < -A_D24_TREND_THRESHOLD_PIPS
+            ):
+                action = SignalAction.HOLD
+                reason = (
+                    f"A strategy BUY suppressed because D24 is in downtrend:"
+                    f" last-{A_D24_LOOKBACK_BARS}-bar mom={d24_mom_pips:.2f} pips"
+                    f" (threshold=-{A_D24_TREND_THRESHOLD_PIPS});"
+                    f" original decision: {decision.reason}"
+                )
+            elif (
+                action == SignalAction.SELL
+                and d24_mom_pips > A_D24_TREND_THRESHOLD_PIPS
+            ):
+                action = SignalAction.HOLD
+                reason = (
+                    f"A strategy SELL suppressed because D24 is in uptrend:"
+                    f" last-{A_D24_LOOKBACK_BARS}-bar mom=+{d24_mom_pips:.2f} pips"
+                    f" (threshold=+{A_D24_TREND_THRESHOLD_PIPS});"
+                    f" original decision: {decision.reason}"
+                )
+
+    # A戦術 gating #6 (対策⑥): 過剰展開下落時の SELL 抑制(底拾い禁止)
+    # 24h で既に大きく下落している状況での SELL は勝率劣化するため遮断。
+    # BUY 側は実測で有害(押し目買いは有効)のため非対称のまま SELL のみ。
+    if (
+        A_D24_BOTTOM_SELL_BLOCK_ENABLED
+        and action == SignalAction.SELL
+    ):
+        bars = market_snapshot.bars
+        if len(bars) >= A_D24_LOOKBACK_BARS + 1:
+            d24_mom_pips = (
+                bars[-1].close - bars[-(A_D24_LOOKBACK_BARS + 1)].close
+            ) * A_PIP_MULTIPLIER
+            if d24_mom_pips < A_D24_BOTTOM_SELL_MOM_THRESHOLD_PIPS:
+                action = SignalAction.HOLD
+                reason = (
+                    f"A strategy SELL suppressed because D24 is over-extended down:"
+                    f" last-{A_D24_LOOKBACK_BARS}-bar mom={d24_mom_pips:.2f} pips"
+                    f" (block-threshold={A_D24_BOTTOM_SELL_MOM_THRESHOLD_PIPS});"
                     f" original decision: {decision.reason}"
                 )
 

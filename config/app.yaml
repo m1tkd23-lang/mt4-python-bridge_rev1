@@ -1,6 +1,6 @@
 # config\app.yaml
 bridge:
-  root: "C:/Users/toku/AppData/Roaming/MetaQuotes/Terminal/F1DD1D6E7C4A311D1B1CA0D34E33291D/MQL4/Files/mt4-python-bridge"
+  root: "C:/Users/tokuda/AppData/Roaming/MetaQuotes/Terminal/F1DD1D6E7C4A311D1B1CA0D34E33291D/MQL4/Files/mt4-python-bridge"
   market_snapshot_filename: "market_snapshot.json"
   runtime_status_filename: "runtime_status.json"
   position_snapshot_filename: "position_snapshot.json"
@@ -11,12 +11,13 @@ snapshot:
 
 signal:
   enabled: true
-  strategy_name: "bollinger_combo_AB"
+  strategy_name: "bollinger_range_A"
 
 # Note: SL/TP は戦術ファイル側で定義する (各戦術の SL_PIPS / TP_PIPS)
-# - bollinger_range_A: SL=20 / TP=20
-# - bollinger_trend_B: SL=20 / TP=40
-# - bollinger_combo_AB: lane 別に子戦術 (range=A, trend=B) の値を使用
+# - bollinger_range_A: SL=20 / TP=25  (2026-04-23 BT最適, ratio=0.60, 時間stop N=20)
+# - bollinger_trend_B: (運用停止中。combo_AB で A+B が A単独を下回るため)
+# - bollinger_combo_AB: (B 停止に伴い運用停止)
+# 本番稼働中は A 単独 (bollinger_range_A) を採用。
 # config/app.yaml には risk セクションを置かない。
 
 runtime:

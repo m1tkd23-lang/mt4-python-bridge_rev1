@@ -68,4 +68,5 @@ class BacktestSimulator(
             "bollinger_range_v4_6_1",
             "bollinger_combo_AB",
             "bollinger_combo_AB_v1",
+            "bollinger_combo_A_retry",
         }
