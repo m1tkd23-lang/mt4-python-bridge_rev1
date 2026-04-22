@@ -57,6 +57,17 @@ A_D24_TREND_THRESHOLD_PIPS = 40.0
 A_D24_BOTTOM_SELL_BLOCK_ENABLED = False
 A_D24_BOTTOM_SELL_MOM_THRESHOLD_PIPS = -80.0
 
+# --- 対策⑦: 中央帯すでに越えた急反転エントリー抑制 ---
+# 2σ 再突入確認は「previous_close がバンド外 → latest_close がバンド内」の
+# 2バー跨ぎルールのため、急反転で latest_close が middle を越えて確定する
+# ケースがある。Phase 1 実測 (24ヶ月): 1709 trades 中 77件 (4.5%) 発生。
+# うち dist_from_middle < 1.0 pips の 31 件は avg -0.72 pips (合計 -22.3 pips)
+# で確実な損失源 (TP 余地なしの whipsaw)。1-2 pips バケットは avg +1.55 pips
+# と勝っているため、閾値は 1.0 pips 付近で最適化する。
+# Phase 2 sweep 結果は analysis/out/exit_sweep/middle_crossed_sweep.py 参照。
+A_MIDDLE_CROSSED_SKIP_ENABLED = True
+A_MIDDLE_CROSSED_SKIP_THRESHOLD_PIPS = 1.0
+
 # ===================================================================
 # リスク設定 (戦術固有の SL/TP)
 # ===================================================================
@@ -228,6 +239,33 @@ def evaluate_bollinger_range_A(
                     f"A strategy SELL suppressed because D24 is over-extended down:"
                     f" last-{A_D24_LOOKBACK_BARS}-bar mom={d24_mom_pips:.2f} pips"
                     f" (block-threshold={A_D24_BOTTOM_SELL_MOM_THRESHOLD_PIPS});"
+                    f" original decision: {decision.reason}"
+                )
+
+    # A戦術 gating #7 (対策⑦): 中央帯すでに越えたエントリーの抑制
+    # latest_close が既に middle を越えて確定した急反転バーは TP 余地が乏しく、
+    # 即座の middle_touch_exit で whipsaw になる。dist_from_middle が
+    # A_MIDDLE_CROSSED_SKIP_THRESHOLD_PIPS 未満のときのみ HOLD に矯正する。
+    if (
+        A_MIDDLE_CROSSED_SKIP_ENABLED
+        and action in (SignalAction.BUY, SignalAction.SELL)
+        and decision.middle_band is not None
+        and decision.latest_close is not None
+    ):
+        latest_close = decision.latest_close
+        middle = decision.middle_band
+        already_crossed = (
+            (action == SignalAction.BUY and latest_close >= middle)
+            or (action == SignalAction.SELL and latest_close <= middle)
+        )
+        if already_crossed:
+            dist_pips = abs(latest_close - middle) * A_PIP_MULTIPLIER
+            if dist_pips < A_MIDDLE_CROSSED_SKIP_THRESHOLD_PIPS:
+                action = SignalAction.HOLD
+                reason = (
+                    f"A strategy entry suppressed because price already crossed middle band"
+                    f" with shallow margin: latest_close={latest_close}, middle={middle},"
+                    f" dist={dist_pips:.2f}pips < threshold={A_MIDDLE_CROSSED_SKIP_THRESHOLD_PIPS}pips;"
                     f" original decision: {decision.reason}"
                 )
 
