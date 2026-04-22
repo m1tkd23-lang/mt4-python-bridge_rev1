@@ -1,8 +1,26 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(SPECPATH) / "src"))
+
 from PyInstaller.utils.hooks import collect_submodules
 
 hiddenimports = []
 hiddenimports += collect_submodules('mt4_bridge.strategies')
+hiddenimports += collect_submodules('mt4_bridge')
+
+# 明示フォールバック (collect_submodules が空でも最低限これだけは積む)
+hiddenimports += [
+    'mt4_bridge.strategies.bollinger_range_A',
+    'mt4_bridge.strategies.bollinger_trend_B',
+    'mt4_bridge.strategies.bollinger_trend_B_params',
+    'mt4_bridge.strategies.bollinger_trend_B_indicators',
+    'mt4_bridge.strategies.bollinger_trend_B_rules',
+    'mt4_bridge.strategies.bollinger_combo_AB',
+    'mt4_bridge.strategies.bollinger_combo_A_retry',
+    'mt4_bridge.strategies.risk_config',
+]
 
 
 a = Analysis(
