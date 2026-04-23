@@ -64,9 +64,19 @@ class ExploreResultPanel(QWidget):
         table_layout.addWidget(QLabel("<b>Iteration Results</b>"))
 
         self._table = QTableWidget()
-        self._table.setColumnCount(6)
+        self._table.setColumnCount(9)
         self._table.setHorizontalHeaderLabels(
-            ["#", "Verdict", "Total Pips", "Win Rate", "PF", "Overrides"]
+            [
+                "#",
+                "Verdict",
+                "Total Pips",
+                "Win Rate",
+                "PF",
+                "ΔPips",
+                "ΔWorst",
+                "ΔDeficit",
+                "Overrides",
+            ]
         )
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.horizontalHeader().setSectionResizeMode(
@@ -226,19 +236,41 @@ class ExploreResultPanel(QWidget):
             else "(default)"
         )
 
+        # Baseline comparison delta columns (may be None when comparison unavailable)
+        if result.baseline_comparison is not None:
+            cmp = result.baseline_comparison.comparison
+            delta_pips_str = (
+                f"{cmp.total_pips_delta:+.1f} ({cmp.total_pips_delta_ratio * 100:+.1f}%)"
+            )
+            delta_worst_str = f"{cmp.worst_month_delta:+.1f}"
+            if cmp.deficit_month_delta == 0 and cmp.consecutive_deficit_delta == 0:
+                delta_deficit_str = "0 / 0"
+            else:
+                # positive delta = fewer deficit months = improvement
+                deficit_sign = -cmp.deficit_month_delta  # show candidate - baseline
+                consec_sign = -cmp.consecutive_deficit_delta
+                delta_deficit_str = f"{deficit_sign:+d} / {consec_sign:+d}"
+        else:
+            delta_pips_str = "-"
+            delta_worst_str = "-"
+            delta_deficit_str = "-"
+
         items = [
             str(iteration),
             result.verdict.upper(),
             total_pips,
             win_rate,
             pf,
+            delta_pips_str,
+            delta_worst_str,
+            delta_deficit_str,
             overrides_str,
         ]
 
         verdict_color = self._verdict_text_color(result.verdict)
         for col, text in enumerate(items):
             item = QTableWidgetItem(text)
-            if col < 5:
+            if col < 8:
                 item.setTextAlignment(Qt.AlignCenter)
 
             # Foreground-only emphasis for dark theme

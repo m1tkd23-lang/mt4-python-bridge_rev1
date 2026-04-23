@@ -28,3 +28,9 @@ python C:\WS\repos\mt4-python-bridge\TEST\analyze_trades.py
 解析シミュレーション
 
 python src/explore_gui.py 
+
+
+csv取得
+python scripts/fetch_dukascopy_data.py --start 2026-01-01 --end 2026-12-31
+
+

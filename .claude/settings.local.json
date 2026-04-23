@@ -33,7 +33,8 @@
       "Bash(.venv/Scripts/python.exe -m backtest.runner --csv-dir \"data/USDJPY-cd5_20250521_monthly\" --strategy bollinger_range_A --symbol USDJPY --timeframe M5 --pip-size 0.01 --sl-pips 20.0 --tp-pips 25.0 --trade-log-dir analysis/out/A_opt_brk_tradelog --show-trades 0)",
       "Bash(.venv/Scripts/python.exe -m backtest.runner --csv \"data/USDJPY-cd5_dukascopy_monthly/USDJPY-cd5_dukascopy_2024-07.csv\" --strategy bollinger_range_A --symbol USDJPY --timeframe M5 --pip-size 0.01 --sl-pips 20.0 --tp-pips 25.0 --show-trades 0)",
       "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe analysis/out/exit_sweep/timestop_sweep.py)",
-      "Bash(.venv/Scripts/python.exe *)"
+      "Bash(.venv/Scripts/python.exe *)",
+      "Bash(awk -F' \\\\\\\\[' '{print $1}')"
     ]
   }
 }

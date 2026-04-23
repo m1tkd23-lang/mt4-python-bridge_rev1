@@ -419,8 +419,26 @@ class ExploreMainWindow(QMainWindow):
             f"Running... Iteration {iteration} / {self._max_iterations}"
         )
         self._result_panel.add_iteration_result(iteration, result)
+        base_cmp_line = ""
+        if result.baseline_comparison is not None:
+            if iteration == 1:
+                bs = result.baseline_comparison.baseline_summary
+                self._result_panel.append_log(
+                    f"Baseline (no overrides): total_pips={bs.get('total_pips', 0.0):+.1f}, "
+                    f"worst_month={bs.get('worst_month_pips', 0.0):+.1f}, "
+                    f"deficit_months={bs.get('deficit_month_count', 0)}, "
+                    f"consec_deficit={bs.get('max_consecutive_deficit_months', 0)}"
+                )
+            c = result.baseline_comparison.comparison
+            base_cmp_line = (
+                f" | Δpips={c.total_pips_delta:+.1f} "
+                f"({c.total_pips_delta_ratio * 100:+.1f}%), "
+                f"Δworst={c.worst_month_delta:+.1f}, "
+                f"Δdeficit={-c.deficit_month_delta:+d}, "
+                f"Δconsec={-c.consecutive_deficit_delta:+d}"
+            )
         self._result_panel.append_log(
-            f"Iteration {iteration}: verdict={result.verdict}, "
+            f"Iteration {iteration}: verdict={result.verdict}{base_cmp_line}, "
             f"overrides={result.param_overrides}"
         )
 

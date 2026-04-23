@@ -24,12 +24,16 @@ from backtest.csv_loader import load_historical_bars_csv
 from backtest.aggregate_stats import AggregateStats, aggregate_monthly_stats
 from backtest.simulator import BacktestSimulator, IntrabarFillPolicy
 from backtest.evaluator import (
+    BaselineComparisonResult,
+    BaselineComparisonThresholds,
     CrossMonthEvaluationResult,
     CrossMonthThresholds,
     EvaluationResult,
     EvaluationThresholds,
+    EvaluationVerdict,
     IntegratedEvaluationResult,
     IntegratedThresholds,
+    compare_to_baseline,
     evaluate_backtest_with_log_guard,
     evaluate_cross_month,
     evaluate_integrated,
@@ -518,6 +522,8 @@ class BollingerExplorationConfig:
     csv_dir: str | None = None
     cross_month_thresholds: CrossMonthThresholds | None = None
     integrated_thresholds: IntegratedThresholds | None = None
+    baseline_comparison_thresholds: BaselineComparisonThresholds | None = None
+    baseline_aggregate_stats: AggregateStats | None = None
     csv_paths: list[str] | None = None
 
 
@@ -532,6 +538,7 @@ class BollingerExplorationResult:
     cross_month_evaluation: CrossMonthEvaluationResult | None = None
     integrated_evaluation: IntegratedEvaluationResult | None = None
     aggregate_stats: AggregateStats | None = None
+    baseline_comparison: BaselineComparisonResult | None = None
 
 
 def run_bollinger_exploration(
@@ -617,6 +624,28 @@ def run_bollinger_exploration(
                 integrated_eval.verdict.value,
             )
 
+    # --- Baseline comparison (outside the overrides context) ---
+    # Only run when we have aggregate_stats and a baseline to compare against.
+    baseline_comparison: BaselineComparisonResult | None = None
+    if config.baseline_aggregate_stats is not None and agg_stats is not None:
+        baseline_comparison = compare_to_baseline(
+            candidate=agg_stats,
+            baseline=config.baseline_aggregate_stats,
+            thresholds=config.baseline_comparison_thresholds,
+        )
+        # Precedence: if integrated eval already DISCARDed, keep DISCARD.
+        # Otherwise baseline comparison verdict wins (it knows regressions
+        # that absolute thresholds miss).
+        if final_verdict == EvaluationVerdict.DISCARD.value:
+            pass
+        else:
+            final_verdict = baseline_comparison.verdict.value
+        logger.info(
+            "Baseline comparison: verdict=%s reasons=%s",
+            baseline_comparison.verdict.value,
+            baseline_comparison.reasons,
+        )
+
     return BollingerExplorationResult(
         strategy_name=config.strategy_name,
         param_overrides=overrides,
@@ -625,6 +654,7 @@ def run_bollinger_exploration(
         cross_month_evaluation=cross_month_eval,
         integrated_evaluation=integrated_eval,
         aggregate_stats=agg_stats,
+        baseline_comparison=baseline_comparison,
     )
 
 
@@ -712,9 +742,11 @@ class BollingerLoopConfig:
     csv_dir: str | None = None
     cross_month_thresholds: CrossMonthThresholds | None = None
     integrated_thresholds: IntegratedThresholds | None = None
+    baseline_comparison_thresholds: BaselineComparisonThresholds | None = None
     param_variation_ranges: dict[str, tuple[float, float, float]] | None = None
     seed_overrides_list: list[dict[str, float]] | None = None
     csv_paths: list[str] | None = None
+    enable_baseline_comparison: bool = True
 
 
 @dataclass
@@ -725,6 +757,42 @@ class BollingerLoopResult:
     results: list[BollingerExplorationResult] = field(default_factory=list)
     adopted: BollingerExplorationResult | None = None
     stopped_reason: str = ""
+    baseline_aggregate_stats: AggregateStats | None = None
+
+
+def _compute_baseline_aggregate(
+    config: BollingerLoopConfig,
+) -> AggregateStats:
+    """Run a BT with zero overrides over the same csv files that iterations
+    will use, and return the resulting AggregateStats. Used as the comparison
+    baseline for all iterations in the loop.
+
+    Raises:
+        ValueError: when no multi-month csv input is available (baseline
+            comparison requires aggregate stats).
+    """
+    resolved_csvs = _resolve_csv_files(config.csv_paths, config.csv_dir)
+    if resolved_csvs is None:
+        raise ValueError(
+            "Baseline comparison requires csv_dir or csv_paths (multi-month)."
+        )
+
+    monthly_stats: list[tuple[str, object]] = []
+    for csv_file in resolved_csvs:
+        month_dataset = load_historical_bars_csv(csv_file)
+        simulator = BacktestSimulator(
+            strategy_name=config.strategy_name,
+            symbol=config.symbol,
+            timeframe=config.timeframe,
+            pip_size=config.pip_size,
+            sl_pips=config.sl_pips,
+            tp_pips=config.tp_pips,
+            intrabar_fill_policy=config.intrabar_fill_policy,
+        )
+        month_result = simulator.run(dataset=month_dataset)
+        monthly_stats.append((csv_file.stem, month_result.stats))
+
+    return aggregate_monthly_stats(monthly_stats)
 
 
 def run_bollinger_exploration_loop(
@@ -764,6 +832,33 @@ def run_bollinger_exploration_loop(
     )
 
     loop_result = BollingerLoopResult()
+
+    # Compute the baseline aggregate stats once up front (no overrides = strategy
+    # file's current values). Subsequent iterations compare their candidate
+    # overrides against this baseline via compare_to_baseline.
+    baseline_aggregate: AggregateStats | None = None
+    if config.enable_baseline_comparison:
+        try:
+            baseline_aggregate = _compute_baseline_aggregate(config)
+            loop_result.baseline_aggregate_stats = baseline_aggregate
+            logger.info(
+                "Baseline aggregate captured: months=%d total_pips=%.1f "
+                "worst_month=%.1f deficit=%d consec_deficit=%d",
+                baseline_aggregate.month_count,
+                baseline_aggregate.total_pips,
+                min(
+                    (e.total_pips for e in baseline_aggregate.monthly_entries),
+                    default=0.0,
+                ),
+                baseline_aggregate.deficit_month_count,
+                baseline_aggregate.max_consecutive_deficit_months,
+            )
+        except Exception:
+            logger.exception(
+                "Baseline aggregate computation failed; "
+                "proceeding without baseline comparison"
+            )
+            baseline_aggregate = None
     improve_retries = 0
     param_variations: list[dict[str, float]] = []
     seed_queue = [
@@ -804,6 +899,8 @@ def run_bollinger_exploration_loop(
             csv_dir=config.csv_dir,
             cross_month_thresholds=config.cross_month_thresholds,
             integrated_thresholds=config.integrated_thresholds,
+            baseline_comparison_thresholds=config.baseline_comparison_thresholds,
+            baseline_aggregate_stats=baseline_aggregate,
             csv_paths=config.csv_paths,
         )
 

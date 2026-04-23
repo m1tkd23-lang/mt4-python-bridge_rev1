@@ -234,22 +234,27 @@ def evaluate_cross_month(
 @dataclass(frozen=True)
 class IntegratedThresholds:
     """Thresholds for integrated adoption evaluation combining aggregate
-    performance and monthly stability.  Values are based on
-    completion_definition section 6."""
+    performance and monthly stability.
+
+    Values tuned 2026-04-23 to align with the current production bollinger_range_A
+    configuration (DUK 2024 + BRK 2025-26: total +1333 / worst -49 / deficit 3-4/12).
+    The intent is that the current production params comfortably pass these gates,
+    while clearly regressive candidates (e.g. total pips -59%, deficit 3→7) are
+    DISCARDed up front. See docs/eval_criteria.md (if added later)."""
 
     # Aggregate performance
-    min_total_pips: float = 0.0
-    min_profit_factor: float = 1.0
-    max_drawdown_pips: float = 200.0
+    min_total_pips: float = 1000.0
+    min_profit_factor: float = 1.15
+    max_drawdown_pips: float = 80.0
 
     # Monthly stability
-    max_deficit_month_ratio: float = 0.5
+    max_deficit_month_ratio: float = 0.30
     max_consecutive_deficit_months: int = 2
     max_monthly_pips_stddev: float = 300.0
 
-    # Monthly average pips (section 6: 150-200 pips target)
-    min_avg_pips_per_month: float = 150.0
-    target_avg_pips_per_month: float = 200.0
+    # Monthly average pips
+    min_avg_pips_per_month: float = 40.0
+    target_avg_pips_per_month: float = 80.0
 
     @staticmethod
     def default() -> IntegratedThresholds:
@@ -384,6 +389,221 @@ def evaluate_integrated(
         verdict=EvaluationVerdict.ADOPT,
         reasons=reasons,
         stats_summary=stats_summary,
+    )
+
+
+# --- Baseline comparison evaluation ---
+
+
+@dataclass(frozen=True)
+class BaselineComparisonThresholds:
+    """Thresholds for deciding whether a candidate is genuinely better than
+    the baseline strategy parameters.
+
+    The philosophy (project priority: "退場しない"):
+    - worst month と deficit months の非悪化が絶対基準
+    - その上で total_pips が baseline 比 +2% 以上なら ADOPT
+    - baseline 比 -20% 以上悪化 or worst month が 10pips 以上深化 or
+      deficit months が +2 以上増加 or 連続 deficit が +1 以上増加なら DISCARD
+    - それ以外は IMPROVE (次イテレーションへ)
+    """
+
+    # ADOPT: すべて満たす必要あり
+    min_total_pips_improvement_ratio: float = 0.02  # +2%
+    max_worst_month_regression_pips: float = 3.0    # 3 pips 以内の深化は許容 (計測ノイズ)
+    max_deficit_month_increase: int = 0              # deficit 月数は増やさない
+    max_consecutive_deficit_increase: int = 0        # 連続 deficit も増やさない
+
+    # DISCARD: どれか該当で即棄却
+    max_total_pips_regression_ratio: float = 0.20    # -20% 以上悪化
+    max_worst_month_deepening_pips: float = 10.0     # 10 pips 以上深化
+    max_deficit_month_increase_discard: int = 2      # +2 以上増加
+    max_consecutive_deficit_increase_discard: int = 1  # +1 以上増加
+
+    @staticmethod
+    def default() -> BaselineComparisonThresholds:
+        return BaselineComparisonThresholds()
+
+
+@dataclass(frozen=True)
+class BaselineComparison:
+    """Numeric deltas between candidate and baseline aggregate stats.
+
+    Sign convention: positive = improvement.
+    - total_pips_delta: candidate - baseline (positive = more pips)
+    - worst_month_delta: positive = worst month got less negative (less deep loss)
+    - deficit_month_delta: positive = fewer deficit months
+    - consecutive_deficit_delta: positive = shorter worst streak
+    """
+
+    total_pips_delta: float
+    total_pips_delta_ratio: float  # delta / abs(baseline). 0 when baseline is 0.
+    worst_month_delta: float
+    deficit_month_delta: int
+    consecutive_deficit_delta: int
+
+
+@dataclass(frozen=True)
+class BaselineComparisonResult:
+    verdict: EvaluationVerdict
+    reasons: list[str]
+    comparison: BaselineComparison
+    baseline_summary: dict[str, object]
+    candidate_summary: dict[str, object]
+
+
+def _worst_month_pips(agg: AggregateStats) -> float:
+    """Return the worst monthly pips (most negative), or 0.0 if no months."""
+    if not agg.monthly_entries:
+        return 0.0
+    return min(entry.total_pips for entry in agg.monthly_entries)
+
+
+def _agg_summary(agg: AggregateStats) -> dict[str, object]:
+    return {
+        "month_count": agg.month_count,
+        "total_pips": agg.total_pips,
+        "worst_month_pips": _worst_month_pips(agg),
+        "deficit_month_count": agg.deficit_month_count,
+        "max_consecutive_deficit_months": agg.max_consecutive_deficit_months,
+        "overall_profit_factor": agg.overall_profit_factor,
+    }
+
+
+def compare_to_baseline(
+    candidate: AggregateStats,
+    baseline: AggregateStats,
+    thresholds: BaselineComparisonThresholds | None = None,
+) -> BaselineComparisonResult:
+    """Judge whether *candidate* is genuinely better than *baseline*.
+
+    The verdict prioritizes 崩壊月 (worst month) and deficit months over raw
+    total pips, matching the project's "退場しない" policy.
+
+    Returns ADOPT only when all four ADOPT criteria are met:
+    - total_pips improved by >= 2%
+    - worst month did not deepen by more than 3 pips
+    - deficit months did not increase
+    - max consecutive deficit months did not increase
+
+    Returns DISCARD when any of the four DISCARD triggers fires:
+    - total_pips regressed by >= 20%
+    - worst month deepened by >= 10 pips
+    - deficit months increased by >= 2
+    - max consecutive deficit months increased by >= 1
+
+    Otherwise returns IMPROVE (intermediate: next iteration should try again).
+    """
+    if thresholds is None:
+        thresholds = BaselineComparisonThresholds.default()
+
+    baseline_worst = _worst_month_pips(baseline)
+    candidate_worst = _worst_month_pips(candidate)
+
+    pips_delta = candidate.total_pips - baseline.total_pips
+    baseline_abs = abs(baseline.total_pips)
+    pips_delta_ratio = (pips_delta / baseline_abs) if baseline_abs > 0 else 0.0
+    worst_delta = candidate_worst - baseline_worst  # positive = improvement
+    deficit_delta_count = (
+        baseline.deficit_month_count - candidate.deficit_month_count
+    )  # positive = improvement (fewer deficit months)
+    consecutive_delta = (
+        baseline.max_consecutive_deficit_months
+        - candidate.max_consecutive_deficit_months
+    )  # positive = improvement
+
+    comparison = BaselineComparison(
+        total_pips_delta=pips_delta,
+        total_pips_delta_ratio=pips_delta_ratio,
+        worst_month_delta=worst_delta,
+        deficit_month_delta=deficit_delta_count,
+        consecutive_deficit_delta=consecutive_delta,
+    )
+    baseline_summary = _agg_summary(baseline)
+    candidate_summary = _agg_summary(candidate)
+
+    # --- DISCARD triggers (any one fires) ---
+    discard_reasons: list[str] = []
+    if pips_delta_ratio <= -thresholds.max_total_pips_regression_ratio:
+        discard_reasons.append(
+            f"total_pips regressed {pips_delta_ratio * 100:+.1f}% "
+            f"(limit {-thresholds.max_total_pips_regression_ratio * 100:.0f}%)"
+        )
+    if worst_delta <= -thresholds.max_worst_month_deepening_pips:
+        discard_reasons.append(
+            f"worst month deepened by {-worst_delta:.1f} pips "
+            f"(baseline {baseline_worst:+.1f} → {candidate_worst:+.1f}; "
+            f"limit {thresholds.max_worst_month_deepening_pips})"
+        )
+    deficit_increase = -deficit_delta_count  # positive if deficit increased
+    if deficit_increase >= thresholds.max_deficit_month_increase_discard:
+        discard_reasons.append(
+            f"deficit months increased by {deficit_increase} "
+            f"(baseline {baseline.deficit_month_count} → "
+            f"{candidate.deficit_month_count}; "
+            f"limit +{thresholds.max_deficit_month_increase_discard - 1})"
+        )
+    consecutive_increase = -consecutive_delta
+    if consecutive_increase >= thresholds.max_consecutive_deficit_increase_discard:
+        discard_reasons.append(
+            f"consecutive deficit months increased by {consecutive_increase} "
+            f"(baseline {baseline.max_consecutive_deficit_months} → "
+            f"{candidate.max_consecutive_deficit_months}; "
+            f"limit 0)"
+        )
+
+    if discard_reasons:
+        return BaselineComparisonResult(
+            verdict=EvaluationVerdict.DISCARD,
+            reasons=discard_reasons,
+            comparison=comparison,
+            baseline_summary=baseline_summary,
+            candidate_summary=candidate_summary,
+        )
+
+    # --- ADOPT criteria (all must hold) ---
+    adopt_checks: list[tuple[bool, str]] = [
+        (
+            pips_delta_ratio >= thresholds.min_total_pips_improvement_ratio,
+            f"total_pips +{pips_delta_ratio * 100:.1f}% "
+            f"(need +{thresholds.min_total_pips_improvement_ratio * 100:.0f}%)",
+        ),
+        (
+            worst_delta >= -thresholds.max_worst_month_regression_pips,
+            f"worst month delta {worst_delta:+.1f} pips "
+            f"(need >= -{thresholds.max_worst_month_regression_pips})",
+        ),
+        (
+            deficit_delta_count >= -thresholds.max_deficit_month_increase,
+            f"deficit months {'same' if deficit_delta_count == 0 else (str(-deficit_delta_count) + ' more' if deficit_delta_count < 0 else str(deficit_delta_count) + ' fewer')}",
+        ),
+        (
+            consecutive_delta >= -thresholds.max_consecutive_deficit_increase,
+            f"consecutive deficit {'same' if consecutive_delta == 0 else (str(-consecutive_delta) + ' more' if consecutive_delta < 0 else str(consecutive_delta) + ' fewer')}",
+        ),
+    ]
+
+    if all(passed for passed, _ in adopt_checks):
+        reasons = ["ADOPT: all criteria met - " + "; ".join(msg for _, msg in adopt_checks)]
+        return BaselineComparisonResult(
+            verdict=EvaluationVerdict.ADOPT,
+            reasons=reasons,
+            comparison=comparison,
+            baseline_summary=baseline_summary,
+            candidate_summary=candidate_summary,
+        )
+
+    # --- IMPROVE (intermediate) ---
+    improve_reasons = [
+        "IMPROVE: no adopt criteria fail hard, but not all met - "
+        + "; ".join(msg for passed, msg in adopt_checks if not passed)
+    ]
+    return BaselineComparisonResult(
+        verdict=EvaluationVerdict.IMPROVE,
+        reasons=improve_reasons,
+        comparison=comparison,
+        baseline_summary=baseline_summary,
+        candidate_summary=candidate_summary,
     )
 
 
